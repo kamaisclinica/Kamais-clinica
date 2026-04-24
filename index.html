@@ -383,26 +383,51 @@ async function dPago(id){
 }
 
 // ============ CONTAS ============
-var KM=new Date().getMonth()+1, KA=new Date().getFullYear(), KL=[], KLoc=0, KR=[];
+var KM=new Date().getMonth()+1, KA=new Date().getFullYear(), KL=[], KLoc=0;
+var _ger=false;
+
+// Ícones automáticos por descrição
+function getIco(desc){
+  var d=(desc||'').toLowerCase();
+  if(d.includes('aluguel')) return '🏠';
+  if(d.includes('energia')||d.includes('equatorial')||d.includes('luz')||d.includes('eletric')) return '⚡';
+  if(d.includes('internet')||d.includes('vivo')||d.includes('claro')||d.includes('tim')||d.includes('fibra')) return '📶';
+  if(d.includes('limpeza')) return '🧹';
+  if(d.includes('condomin')) return '🏢';
+  if(d.includes('estacion')||d.includes('parking')) return '🚗';
+  if(d.includes('seguro')) return '🛡️';
+  if(d.includes('cartão')||d.includes('cartao')) return '💳';
+  if(d.includes('café')||d.includes('cafe')) return '☕';
+  if(d.includes('amazon')) return '📦';
+  if(d.includes('mercado')||d.includes('atacad')||d.includes('superm')||d.includes('bazar')) return '🛒';
+  if(d.includes('agua')||d.includes('água')) return '💧';
+  if(d.includes('gas')||d.includes('gás')) return '🔥';
+  if(d.includes('telefone')||d.includes('celular')) return '📱';
+  if(d.includes('contador')||d.includes('contabil')) return '📊';
+  if(d.includes('iptu')||d.includes('ipva')||d.includes('imposto')) return '📋';
+  if(d.includes('salario')||d.includes('salário')||d.includes('folha')) return '👥';
+  if(d.includes('farmac')||d.includes('medic')||d.includes('saude')||d.includes('saúde')) return '💊';
+  return '📌';
+}
+
 async function pgContas(){
   document.getElementById('tb-acts').innerHTML=
     '<div class="mn"><button class="mn-btn" id="k-ant">◀</button><span class="mn-lbl" id="k-lbl"></span><button class="mn-btn" id="k-prox">▶</button></div>'+
-    '<button class="btn btn-gold" onclick="modalDesp()">+ Nova despesa</button>';
+    '<button class="btn btn-gold" onclick="abreNovaDesp()">+ Nova despesa</button>';
+
   document.getElementById('pg-body').innerHTML=
-    '<div class="loc-bar"><span class="loc-l">🏠 Receita de Locação (50/50)</span><input class="loc-inp" id="k-loc" type="number" min="0" step="0.01" placeholder="0,00"/><button class="btn btn-ghost btn-sm" onclick="kSalvaLoc()">Salvar</button></div>'+
-    '<div class="tw"><table><thead><tr><th>Data Pgto</th><th>Data Venc</th><th>Descrição</th><th>Valor</th><th>Status</th><th>Ações</th></tr></thead><tbody id="k-tb"></tbody></table></div>'+
-    '<div id="k-em" style="display:none" class="empty">Nenhum lançamento.<br>Adicione uma despesa ou crie uma conta recorrente abaixo.</div>'+
-    '<div class="sec-box"><div class="sec-box-hdr" onclick="togRec()"><span class="sec-t">⚙️ Gerenciar recorrentes <span id="rc-cnt" style="font-size:12px;color:var(--text2);font-weight:400"></span></span><div style="display:flex;gap:8px;align-items:center"><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();modalRec()">+ Nova recorrente</button><span id="rc-arr" style="color:var(--text2);font-size:18px">▾</span></div></div><div id="rc-body" class="sec-box-body"><div class="tw" id="rc-tw"><table><thead><tr><th>Nome</th><th>Todo dia</th><th>Valor</th><th>Categoria</th><th>Ações</th></tr></thead><tbody id="rc-tb"></tbody></table></div><div id="rc-em" style="display:none;text-align:center;padding:20px;color:var(--text2);font-size:13px">Nenhuma conta recorrente.</div></div></div>';
+    '<div class="loc-bar"><span class="loc-l">🏠 Receita de Locação (50/50)</span>'+
+    '<input class="loc-inp" id="k-loc" type="number" min="0" step="0.01" placeholder="0,00"/>'+
+    '<button class="btn btn-ghost btn-sm" onclick="kSalvaLoc()">Salvar</button></div>'+
+    '<div class="tw"><table><thead><tr><th>Data Pgto</th><th>Data Venc</th><th>Descrição</th><th>Valor</th><th>Status</th><th>Ações</th></tr></thead>'+
+    '<tbody id="k-tb"></tbody></table></div>'+
+    '<div id="k-em" style="display:none" class="empty">Nenhum lançamento.<br>Clique em "+ Nova despesa" para adicionar.</div>';
+
   document.getElementById('k-ant').onclick=function(){KM--;if(KM<1){KM=12;KA--;}kLoad();};
   document.getElementById('k-prox').onclick=function(){KM++;if(KM>12){KM=1;KA++;}kLoad();};
   await kLoad();
 }
-var _rOpen=true;
-function togRec(){
-  _rOpen=!_rOpen;
-  document.getElementById('rc-body').style.display=_rOpen?'':'none';
-  document.getElementById('rc-arr').textContent=_rOpen?'▾':'▸';
-}
+
 async function kLoad(){
   var lbl=document.getElementById('k-lbl'); if(lbl) lbl.textContent=NM(KM,KA);
   L(1);
@@ -412,11 +437,10 @@ async function kLoad(){
     KL=ld.data||[];
     KLoc=await getLoc(KM,KA);
     var li=document.getElementById('k-loc'); if(li) li.value=KLoc||'';
-    var rd=await SB.from('contas_fixas').select('*').eq('user_id',CU.id).order('nome');
-    KR=rd.data||[];
-    kTabela(); kRec();
+    kTabela();
   }catch(e){T('Erro: '+e.message,'err');}finally{L(0);}
 }
+
 async function geraRec(m,a){
   if(_ger) return; _ger=true;
   try{
@@ -435,106 +459,288 @@ async function geraRec(m,a){
     await SB.from('lancamentos').insert(ins);
   }finally{_ger=false;}
 }
+
 function kTabela(){
   var tb=document.getElementById('k-tb'), em=document.getElementById('k-em'), tw=document.querySelector('.tw');
   if(!tb) return;
   var hj=new Date().toISOString().substring(0,10);
-  if(!KL.length){tw.style.display='none';em.style.display='block';return;}
-  tw.style.display='';em.style.display='none';
+  if(!KL.length){if(tw)tw.style.display='none';em.style.display='block';return;}
+  if(tw)tw.style.display=''; em.style.display='none';
   tb.innerHTML=KL.map(function(l){
     var v=l.status==='a_pagar'&&l.data_vencimento&&l.data_vencimento<hj;
     var p=l.status==='pago';
     var rc=v?'tr-v':p?'tr-p':'', bc=p?'bg':v?'br':'ba', bt=p?'✅ Pago':v?'🔴 Vencida':'⏳ A pagar';
-    var descCell = l.tipo==='conta_fixa'
-      ? l.descricao+' <span style="font-size:10px;background:rgba(201,168,76,0.15);color:var(--gold);border:1px solid rgba(201,168,76,0.3);border-radius:4px;padding:2px 6px;font-weight:600;vertical-align:middle">Recorrente</span>'
-      : l.descricao;
-    return '<tr class="'+rc+'"><td>'+DT(l.data_pagamento)+'</td><td>'+DT(l.data_vencimento)+'</td>'+
+    var ico=getIco(l.descricao);
+    var badge=l.tipo==='conta_fixa'?' <span style="font-size:10px;background:rgba(201,168,76,0.15);color:var(--gold);border:1px solid rgba(201,168,76,0.3);border-radius:4px;padding:2px 6px;font-weight:600">Recorrente</span>':'';
+    var descCell=ico+' '+l.descricao+badge;
+    var acoes='<div class="ag">'+
+      (p?'':'<button class="btn-g" style="border-radius:8px;font-family:inherit;font-weight:600;cursor:pointer;height:32px;padding:0 12px;font-size:12px" onclick="kConfirmaPago(\''+l.id+'\',\''+l.data_vencimento+'\')">✅</button>')+
+      '<button class="btn-a" style="border-radius:8px;font-family:inherit;font-weight:600;cursor:pointer;height:32px;padding:0 12px;font-size:12px" onclick="kEdit(\''+l.id+'\')">✏️</button>'+
+      '<button class="btn-r" style="border-radius:8px;font-family:inherit;font-weight:600;cursor:pointer;height:32px;padding:0 12px;font-size:12px" onclick="kDel(\''+l.id+'\')">🗑️</button>'+
+      '</div>';
+    return '<tr class="'+rc+'">'+
+      '<td>'+DT(l.data_pagamento)+'</td>'+
+      '<td>'+DT(l.data_vencimento)+'</td>'+
       '<td>'+descCell+'</td>'+
       '<td style="font-weight:700;color:var(--gold)">'+BRL(l.valor)+'</td>'+
       '<td><span class="badge '+bc+'">'+bt+'</span></td>'+
-      '<td><div class="ag">'+(p?'':'<button class="btn-g" style="border-radius:8px;font-family:inherit;font-weight:600;cursor:pointer;height:32px;padding:0 12px;font-size:12px" onclick="kPago(\''+l.id+'\')">✅</button>')+
-      '<button class="btn-a" style="border-radius:8px;font-family:inherit;font-weight:600;cursor:pointer;height:32px;padding:0 12px;font-size:12px" onclick="kEdit(\''+l.id+'\')">✏️</button>'+
-      '<button class="btn-r" style="border-radius:8px;font-family:inherit;font-weight:600;cursor:pointer;height:32px;padding:0 12px;font-size:12px" onclick="kDel(\''+l.id+'\')">🗑️</button></div></td></tr>';
+      '<td>'+acoes+'</td></tr>';
   }).join('');
 }
-function kRec(){
-  var tb=document.getElementById('rc-tb'), em=document.getElementById('rc-em'), tw=document.getElementById('rc-tw'), cnt=document.getElementById('rc-cnt');
-  if(cnt) cnt.textContent=KR.length?'('+KR.length+')':'';
-  if(!KR.length){if(tw)tw.style.display='none';if(em)em.style.display='block';return;}
-  if(tw)tw.style.display='';if(em)em.style.display='none';
-  tb.innerHTML=KR.map(function(c){
-    return '<tr><td style="font-weight:600">'+c.nome+'</td><td>Todo dia <strong>'+c.dia_vencimento+'</strong></td>'+
-      '<td style="color:var(--gold);font-weight:700">'+BRL(c.valor_padrao)+'</td>'+
-      '<td><span class="badge '+(c.categoria==='Fixa'?'ba':'bgr')+'">'+c.categoria+'</span></td>'+
-      '<td><div class="ag"><button class="btn-a" style="border-radius:8px;font-family:inherit;font-weight:600;cursor:pointer;height:32px;padding:0 12px;font-size:12px" onclick="modalRec(\''+c.id+'\')">✏️</button>'+
-      '<button class="btn-r" style="border-radius:8px;font-family:inherit;font-weight:600;cursor:pointer;height:32px;padding:0 12px;font-size:12px" onclick="delRec(\''+c.id+'\')">🗑️</button></div></td></tr>';
-  }).join('');
+
+// Marcar pago — pré-preenche com a data de vencimento, permite editar
+function kConfirmaPago(id, dataVenc){
+  var defaultDate = dataVenc || new Date().toISOString().substring(0,10);
+  abreModal('Confirmar pagamento',
+    '<p style="color:var(--text2);font-size:13px;margin-bottom:16px">Confirme a data em que a conta foi paga:</p>'+
+    '<div class="fg"><label>Data de pagamento</label><input id="pg-data" type="date" value="'+defaultDate+'"/></div>'+
+    '<div class="fa">'+
+    '<button class="btn btn-ghost btn-sm" onclick="fechaModal()">Cancelar</button>'+
+    '<button class="btn btn-gold btn-sm" onclick="kPago(\''+id+'\')">Confirmar</button>'+
+    '</div>');
 }
+
 async function kPago(id){
-  L(1);await SB.from('lancamentos').update({status:'pago',data_pagamento:new Date().toISOString().substring(0,10)}).eq('id',id).eq('user_id',CU.id);L(0);
-  T('Marcado como pago!');kLoad();
+  var dataPgto=document.getElementById('pg-data').value;
+  if(!dataPgto){T('Informe a data de pagamento.','err');return;}
+  L(1);fechaModal();
+  await SB.from('lancamentos').update({status:'pago',data_pagamento:dataPgto}).eq('id',id).eq('user_id',CU.id);
+  L(0); T('Marcado como pago!'); kLoad();
 }
+
 async function kDel(id){
   if(!await confirma('Excluir este lançamento?')) return;
   L(1);await SB.from('lancamentos').delete().eq('id',id).eq('user_id',CU.id);L(0);
   T('Excluído.');kLoad();
 }
-function kEdit(id){var l=KL.find(function(x){return x.id===id;});if(!l)return;_modalDesp(l);}
+function kEdit(id){var l=KL.find(function(x){return x.id===id;});if(!l)return;_abreEdit(l);}
 async function kSalvaLoc(){
   var v=parseFloat(document.getElementById('k-loc').value)||0;
   L(1);try{await saveLoc(KM,KA,v);KLoc=v;T('Receita de locação salva!');}catch(e){T('Erro: '+e.message,'err');}finally{L(0);}
 }
-function modalDesp(){_modalDesp(null);}
-function _modalDesp(l){
-  abreModal(l?'Editar lançamento':'Nova despesa',
-    '<div class="fg"><label>Descrição *</label><input id="ml-d" value="'+(l?l.descricao:'')+'" placeholder="Ex: Limpeza, Cartão…"/></div>'+
-    '<div class="fr"><div class="fg"><label>Valor (R$) *</label><input id="ml-v" type="number" min="0" step="0.01" value="'+(l?l.valor:'')+'"/></div>'+
-    '<div class="fg"><label>Status</label><select id="ml-s"><option value="a_pagar" '+(!l||l.status==='a_pagar'?'selected':'')+'>⏳ A pagar</option><option value="pago" '+(l&&l.status==='pago'?'selected':'')+'>✅ Pago</option></select></div></div>'+
-    '<div class="fr"><div class="fg"><label>Data de vencimento</label><input id="ml-vn" type="date" value="'+(l&&l.data_vencimento?l.data_vencimento:'')+'"/></div>'+
-    '<div class="fg"><label>Data de pagamento</label><input id="ml-pg" type="date" value="'+(l&&l.data_pagamento?l.data_pagamento:'')+'"/></div></div>'+
-    '<div class="fa"><button class="btn btn-ghost btn-sm" onclick="fechaModal()">Cancelar</button><button class="btn btn-gold btn-sm" onclick="salvaDesp(\''+(l?l.id:'')+'\')">Salvar</button></div>');
+
+// ── MODAL NOVA DESPESA ──────────────────────────────────────────
+function abreNovaDesp(){ _tipoDesp('avulsa'); }
+
+function _tipoDesp(tipo){
+  var tabs=[
+    {k:'avulsa',   ico:'📅', label:'Avulsa'},
+    {k:'multiplas',ico:'📆', label:'Múltiplas datas'},
+    {k:'recorrente',ico:'🔁', label:'Recorrente'},
+    {k:'parcelada', ico:'📦', label:'Parcelada'},
+    {k:'cartao',    ico:'💳', label:'Cartão'},
+  ];
+  var tabsHtml=tabs.map(function(t){
+    var on=t.k===tipo?'style="background:var(--bg2);color:var(--text);font-weight:700"':'style="color:var(--text2)"';
+    return '<button onclick="_tipoDesp(\''+t.k+'\')" '+on+' style="flex:1;padding:8px 4px;border-radius:8px;font-size:11.5px;font-family:inherit;cursor:pointer;border:none;transition:background .15s;white-space:nowrap">'+t.ico+'<br>'+t.label+'</button>';
+  }).join('');
+
+  var fields='';
+  if(tipo==='avulsa'){
+    fields=
+      '<div class="fg"><label>Descrição *</label><input id="f-desc" placeholder="Ex: Limpeza, Energia…"/></div>'+
+      '<div class="fr">'+
+        '<div class="fg"><label>Valor (R$) *</label><input id="f-val" type="number" min="0" step="0.01"/></div>'+
+        '<div class="fg"><label>Status</label><select id="f-st"><option value="a_pagar">⏳ A pagar</option><option value="pago">✅ Pago</option></select></div>'+
+      '</div>'+
+      '<div class="fr">'+
+        '<div class="fg"><label>Data de vencimento</label><input id="f-vn" type="date"/></div>'+
+        '<div class="fg"><label>Data de pagamento</label><input id="f-pg" type="date"/></div>'+
+      '</div>';
+  } else if(tipo==='multiplas'){
+    fields=
+      '<div class="fg"><label>Descrição *</label><input id="f-desc" placeholder="Ex: Limpeza consultório"/></div>'+
+      '<div class="fr">'+
+        '<div class="fg"><label>Valor por ocorrência (R$) *</label><input id="f-val" type="number" min="0" step="0.01"/></div>'+
+        '<div class="fg"><label>Status padrão</label><select id="f-st"><option value="a_pagar">⏳ A pagar</option><option value="pago">✅ Pago</option></select></div>'+
+      '</div>'+
+      '<div class="fg"><label>Datas de vencimento</label><div id="f-datas"><div style="display:flex;gap:8px;margin-bottom:8px"><input type="date" class="f-data-item" style="flex:1;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:10px 13px;color:var(--text);font-family:inherit;outline:none"/><button onclick="removData(this)" style="background:var(--red-bg);color:var(--red);border:none;border-radius:8px;padding:0 12px;cursor:pointer;font-size:16px">✕</button></div></div>'+
+      '<button onclick="addData()" class="btn btn-ghost btn-sm" style="margin-top:4px">+ Adicionar data</button></div>';
+  } else if(tipo==='recorrente'){
+    var hj=new Date(), ms=String(hj.getMonth()+1).padStart(2,'0');
+    fields=
+      '<div class="fg"><label>Descrição *</label><input id="f-desc" placeholder="Ex: Aluguel, Internet…"/></div>'+
+      '<div class="fr">'+
+        '<div class="fg"><label>Dia de vencimento *</label><input id="f-dia" type="date" value="'+hj.getFullYear()+'-'+ms+'-01'+'"/><p style="font-size:11px;color:var(--text2);margin-top:4px">Apenas o <strong>dia</strong> será usado mensalmente.</p></div>'+
+        '<div class="fg"><label>Valor (R$) *</label><input id="f-val" type="number" min="0" step="0.01"/></div>'+
+      '</div>'+
+      '<div class="fg"><label>Categoria</label><select id="f-cat"><option value="Fixa">Fixa</option><option value="Variável">Variável</option></select></div>';
+  } else if(tipo==='parcelada'){
+    fields=
+      '<div class="fg"><label>Descrição *</label><input id="f-desc" placeholder="Ex: Seguro sala"/></div>'+
+      '<div class="fr">'+
+        '<div class="fg"><label>Valor por parcela (R$) *</label><input id="f-val" type="number" min="0" step="0.01"/></div>'+
+        '<div class="fg"><label>Nº de parcelas *</label><input id="f-parc" type="number" min="2" max="60" value="3"/></div>'+
+      '</div>'+
+      '<div class="fr">'+
+        '<div class="fg"><label>1ª parcela — Data venc *</label><input id="f-vn" type="date"/></div>'+
+        '<div class="fg"><label>Intervalo</label><select id="f-int"><option value="mensal">Mensal</option><option value="semanal">Semanal</option></select></div>'+
+      '</div>'+
+      '<div class="fg"><label>Status padrão</label><select id="f-st"><option value="a_pagar">⏳ A pagar</option><option value="pago">✅ Pago</option></select></div>';
+  } else if(tipo==='cartao'){
+    fields=
+      '<div class="fg"><label>Fatura / descrição do cartão *</label><input id="f-desc" placeholder="Ex: Cartão Nubank"/></div>'+
+      '<div class="fr">'+
+        '<div class="fg"><label>Data de vencimento *</label><input id="f-vn" type="date"/></div>'+
+        '<div class="fg"><label>Status</label><select id="f-st"><option value="a_pagar">⏳ A pagar</option><option value="pago">✅ Pago</option></select></div>'+
+      '</div>'+
+      '<div class="fg"><label>Itens do cartão</label>'+
+      '<div id="f-itens">'+
+        '<div class="cartao-item" style="display:flex;gap:8px;margin-bottom:8px">'+
+          '<input placeholder="Descrição do item" class="f-item-desc" style="flex:2;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:9px 12px;color:var(--text);font-family:inherit;outline:none"/>'+
+          '<input type="number" placeholder="R$" class="f-item-val" min="0" step="0.01" style="flex:1;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:9px 12px;color:var(--text);font-family:inherit;outline:none"/>'+
+          '<button onclick="removeItem(this)" style="background:var(--red-bg);color:var(--red);border:none;border-radius:8px;padding:0 12px;cursor:pointer;font-size:16px">✕</button>'+
+        '</div>'+
+      '</div>'+
+      '<button onclick="addItem()" class="btn btn-ghost btn-sm" style="margin-top:4px">+ Adicionar item</button></div>';
+  }
+
+  abreModal('Nova despesa',
+    '<div style="display:flex;gap:4px;background:var(--bg3);padding:4px;border-radius:10px;margin-bottom:20px">'+tabsHtml+'</div>'+
+    '<div id="f-fields">'+fields+'</div>'+
+    '<div class="fa">'+
+      '<button class="btn btn-ghost btn-sm" onclick="fechaModal()">Cancelar</button>'+
+      '<button class="btn btn-gold btn-sm" onclick="salvaNovaDesp(\''+tipo+'\')">Salvar</button>'+
+    '</div>');
 }
-async function salvaDesp(id){
-  var d=document.getElementById('ml-d').value.trim();
-  var v=parseFloat(document.getElementById('ml-v').value);
-  if(!d||isNaN(v)){T('Preencha descrição e valor.','err');return;}
-  var st=document.getElementById('ml-s').value;
-  var vn=document.getElementById('ml-vn').value;
-  var pg=document.getElementById('ml-pg').value;
+
+function addData(){
+  var c=document.createElement('div');
+  c.style.cssText='display:flex;gap:8px;margin-bottom:8px';
+  c.innerHTML='<input type="date" class="f-data-item" style="flex:1;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:10px 13px;color:var(--text);font-family:inherit;outline:none"/><button onclick="removData(this)" style="background:var(--red-bg);color:var(--red);border:none;border-radius:8px;padding:0 12px;cursor:pointer;font-size:16px">✕</button>';
+  document.getElementById('f-datas').appendChild(c);
+}
+function removData(btn){ btn.parentElement.remove(); }
+function addItem(){
+  var c=document.createElement('div');
+  c.className='cartao-item'; c.style.cssText='display:flex;gap:8px;margin-bottom:8px';
+  c.innerHTML='<input placeholder="Descrição do item" class="f-item-desc" style="flex:2;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:9px 12px;color:var(--text);font-family:inherit;outline:none"/><input type="number" placeholder="R$" class="f-item-val" min="0" step="0.01" style="flex:1;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:9px 12px;color:var(--text);font-family:inherit;outline:none"/><button onclick="removeItem(this)" style="background:var(--red-bg);color:var(--red);border:none;border-radius:8px;padding:0 12px;cursor:pointer;font-size:16px">✕</button>';
+  document.getElementById('f-itens').appendChild(c);
+}
+function removeItem(btn){ btn.parentElement.remove(); }
+
+async function salvaNovaDesp(tipo){
   L(1);fechaModal();
-  var pay={user_id:CU.id,tipo:'despesa_avulsa',descricao:d,valor:v,data_vencimento:vn||null,data_pagamento:pg||null,status:st,mes:KM,ano:KA};
-  var r=id?await SB.from('lancamentos').update(pay).eq('id',id):await SB.from('lancamentos').insert(pay);
-  L(0);if(r.error){T('Erro: '+r.error.message,'err');return;}
-  T(id?'Atualizado!':'Despesa criada!');kLoad();
+  try{
+    if(tipo==='avulsa'){
+      var desc=document.getElementById('f-desc').value.trim();
+      var val=parseFloat(document.getElementById('f-val').value);
+      if(!desc||isNaN(val)){T('Preencha descrição e valor.','err');L(0);return;}
+      var st=document.getElementById('f-st').value;
+      var vn=document.getElementById('f-vn').value;
+      var pg=document.getElementById('f-pg').value;
+      var r=await SB.from('lancamentos').insert({user_id:CU.id,tipo:'despesa_avulsa',descricao:desc,valor:val,
+        data_vencimento:vn||null,data_pagamento:pg||null,status:st,mes:KM,ano:KA});
+      if(r.error)throw r.error;
+      T('Despesa criada!');
+
+    } else if(tipo==='multiplas'){
+      var desc=document.getElementById('f-desc').value.trim();
+      var val=parseFloat(document.getElementById('f-val').value);
+      if(!desc||isNaN(val)){T('Preencha descrição e valor.','err');L(0);return;}
+      var st=document.getElementById('f-st').value;
+      var datas=Array.from(document.querySelectorAll('.f-data-item')).map(function(i){return i.value;}).filter(Boolean);
+      if(!datas.length){T('Adicione pelo menos uma data.','err');L(0);return;}
+      var ins=datas.map(function(d,i){
+        var dt=new Date(d+'T12:00:00');
+        var m=dt.getMonth()+1, a=dt.getFullYear();
+        return{user_id:CU.id,tipo:'despesa_avulsa',descricao:desc+(datas.length>1?' ('+(i+1)+'/'+datas.length+')':''),
+          valor:val,data_vencimento:d,data_pagamento:null,status:st,mes:m,ano:a};
+      });
+      var r=await SB.from('lancamentos').insert(ins);
+      if(r.error)throw r.error;
+      T(datas.length+' lançamento(s) criado(s)!');
+
+    } else if(tipo==='recorrente'){
+      var nome=document.getElementById('f-desc').value.trim();
+      var dv=document.getElementById('f-dia').value;
+      var val=parseFloat(document.getElementById('f-val').value);
+      var cat=document.getElementById('f-cat').value;
+      if(!nome||!dv||isNaN(val)){T('Preencha todos os campos.','err');L(0);return;}
+      var dia=parseInt(dv.split('-')[2]);
+      var r=await SB.from('contas_fixas').insert({user_id:CU.id,nome:nome,dia_vencimento:dia,valor_padrao:val,categoria:cat});
+      if(r.error)throw r.error;
+      _ger=false; // reset flag to allow generation
+      T('Conta recorrente criada!');
+
+    } else if(tipo==='parcelada'){
+      var desc=document.getElementById('f-desc').value.trim();
+      var val=parseFloat(document.getElementById('f-val').value);
+      var n=parseInt(document.getElementById('f-parc').value);
+      var vn=document.getElementById('f-vn').value;
+      var intv=document.getElementById('f-int').value;
+      var st=document.getElementById('f-st').value;
+      if(!desc||isNaN(val)||!vn||isNaN(n)){T('Preencha todos os campos.','err');L(0);return;}
+      var ins=[];
+      var dt=new Date(vn+'T12:00:00');
+      for(var i=0;i<n;i++){
+        var y=dt.getFullYear(), mo=dt.getMonth()+1, dy=dt.getDate();
+        var ds=y+'-'+String(mo).padStart(2,'0')+'-'+String(dy).padStart(2,'0');
+        ins.push({user_id:CU.id,tipo:'despesa_avulsa',descricao:desc+' ('+(i+1)+'/'+n+')',
+          valor:val,data_vencimento:ds,data_pagamento:null,status:st,mes:mo,ano:y});
+        if(intv==='semanal'){dt.setDate(dt.getDate()+7);}
+        else{dt.setMonth(dt.getMonth()+1);}
+      }
+      var r=await SB.from('lancamentos').insert(ins);
+      if(r.error)throw r.error;
+      T(n+' parcela(s) criada(s)!');
+
+    } else if(tipo==='cartao'){
+      var prefix=document.getElementById('f-desc').value.trim();
+      var vn=document.getElementById('f-vn').value;
+      var st=document.getElementById('f-st').value;
+      if(!vn){T('Informe a data de vencimento.','err');L(0);return;}
+      var dt=new Date(vn+'T12:00:00');
+      var mo=dt.getMonth()+1, yr=dt.getFullYear();
+      var descs=Array.from(document.querySelectorAll('.f-item-desc')).map(function(i){return i.value.trim();});
+      var vals=Array.from(document.querySelectorAll('.f-item-val')).map(function(i){return parseFloat(i.value);});
+      var ins=[];
+      for(var i=0;i<descs.length;i++){
+        if(!descs[i]||isNaN(vals[i]))continue;
+        ins.push({user_id:CU.id,tipo:'despesa_avulsa',
+          descricao:'💳 '+(prefix?prefix+' — ':'')+descs[i],
+          valor:vals[i],data_vencimento:vn,data_pagamento:null,status:st,mes:mo,ano:yr});
+      }
+      if(!ins.length){T('Adicione ao menos um item.','err');L(0);return;}
+      var r=await SB.from('lancamentos').insert(ins);
+      if(r.error)throw r.error;
+      T(ins.length+' item(ns) do cartão criado(s)!');
+    }
+    kLoad();
+  }catch(e){T('Erro: '+e.message,'err');L(0);}
 }
-function modalRec(id){
-  var c=KR.find(function(x){return x.id===id;})||{};
-  var hj=new Date(), ms=String(hj.getMonth()+1).padStart(2,'0');
-  var dv=c.dia_vencimento?hj.getFullYear()+'-'+ms+'-'+String(c.dia_vencimento).padStart(2,'0'):'';
-  abreModal(id?'Editar conta recorrente':'Nova conta recorrente',
-    '<div class="fg"><label>Nome *</label><input id="cf-n" value="'+(c.nome||'')+'" placeholder="Ex: Aluguel, Energia…"/></div>'+
-    '<div class="fr"><div class="fg"><label>Dia de vencimento *</label><input id="cf-d" type="date" value="'+dv+'"/><p style="font-size:11px;color:var(--text2);margin-top:4px">Apenas o <strong>dia</strong> é usado.</p></div>'+
-    '<div class="fg"><label>Valor (R$) *</label><input id="cf-v" type="number" min="0" step="0.01" value="'+(c.valor_padrao||'')+'"/></div></div>'+
-    '<div class="fg"><label>Categoria</label><select id="cf-c"><option value="Fixa" '+(c.categoria==='Fixa'?'selected':'')+'>Fixa</option><option value="Variável" '+(c.categoria==='Variável'?'selected':'')+'>Variável</option></select></div>'+
-    '<div class="fa"><button class="btn btn-ghost btn-sm" onclick="fechaModal()">Cancelar</button><button class="btn btn-gold btn-sm" onclick="salvaRec(\''+(id||'')+'\')">Salvar</button></div>');
+
+// Editar lançamento existente
+function _abreEdit(l){
+  abreModal('Editar lançamento',
+    '<div class="fg"><label>Descrição</label><input id="el-d" value="'+l.descricao+'"/></div>'+
+    '<div class="fr">'+
+      '<div class="fg"><label>Valor (R$)</label><input id="el-v" type="number" min="0" step="0.01" value="'+l.valor+'"/></div>'+
+      '<div class="fg"><label>Status</label><select id="el-s"><option value="a_pagar" '+(l.status==='a_pagar'?'selected':'')+'>⏳ A pagar</option><option value="pago" '+(l.status==='pago'?'selected':'')+'>✅ Pago</option></select></div>'+
+    '</div>'+
+    '<div class="fr">'+
+      '<div class="fg"><label>Data de vencimento</label><input id="el-vn" type="date" value="'+(l.data_vencimento||'')+'"/></div>'+
+      '<div class="fg"><label>Data de pagamento</label><input id="el-pg" type="date" value="'+(l.data_pagamento||'')+'"/></div>'+
+    '</div>'+
+    '<div class="fa">'+
+      '<button class="btn btn-ghost btn-sm" onclick="fechaModal()">Cancelar</button>'+
+      '<button class="btn btn-gold btn-sm" onclick="salvaEdit(\''+l.id+'\')">Salvar</button>'+
+    '</div>');
 }
-async function salvaRec(id){
-  var n=document.getElementById('cf-n').value.trim();
-  var dv=document.getElementById('cf-d').value;
-  var v=parseFloat(document.getElementById('cf-v').value);
-  var cat=document.getElementById('cf-c').value;
-  if(!n||!dv||isNaN(v)){T('Preencha todos os campos.','err');return;}
-  var dia=parseInt(dv.split('-')[2]);
+async function salvaEdit(id){
+  var desc=document.getElementById('el-d').value.trim();
+  var val=parseFloat(document.getElementById('el-v').value);
+  var st=document.getElementById('el-s').value;
+  var vn=document.getElementById('el-vn').value;
+  var pg=document.getElementById('el-pg').value;
+  if(!desc||isNaN(val)){T('Preencha descrição e valor.','err');return;}
   L(1);fechaModal();
-  var pay={user_id:CU.id,nome:n,dia_vencimento:dia,valor_padrao:v,categoria:cat};
-  var r=id?await SB.from('contas_fixas').update(pay).eq('id',id):await SB.from('contas_fixas').insert(pay);
+  var r=await SB.from('lancamentos').update({descricao:desc,valor:val,status:st,
+    data_vencimento:vn||null,data_pagamento:pg||null}).eq('id',id);
   L(0);if(r.error){T('Erro: '+r.error.message,'err');return;}
-  T(id?'Atualizada!':'Conta criada!');kLoad();
+  T('Atualizado!');kLoad();
 }
-async function delRec(id){
-  if(!await confirma('Excluir esta conta recorrente? Lançamentos já gerados NÃO serão removidos.')) return;
-  L(1);await SB.from('contas_fixas').delete().eq('id',id);L(0);T('Excluída.');kLoad();
-}
+
 
 // ============ FINANCEIRO ============
 var FM=new Date().getMonth()+1, FA=new Date().getFullYear(), FL=[], FLoc=0;
