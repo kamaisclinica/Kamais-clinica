@@ -247,6 +247,12 @@ function BRL(v){ return Number(v||0).toLocaleString('pt-BR',{style:'currency',cu
 function DT(s){ if(!s) return '—'; var p=s.substring(0,10).split('-'); return p[2]+'/'+p[1]+'/'+p[0]; }
 var MES = ['','Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 function NM(m,a){ return MES[m]+' '+a; }
+function parseVal(s){
+  // Remove R$, espacos, pontos de milhar; troca virgula decimal por ponto
+  var c=(s||'').toString().replace(/[^0-9,]/g,'').replace(',','.');
+  var n=parseFloat(c);
+  return isNaN(n)?0:n;
+}
 function abreModal(t,h){ document.getElementById('mo-title').textContent=t; document.getElementById('mo-body').innerHTML=h; document.getElementById('mo').classList.add('open'); }
 function fechaModal(){ document.getElementById('mo').classList.remove('open'); }
 document.getElementById('mo').addEventListener('click', function(e){ if(e.target===this) fechaModal(); });
@@ -652,9 +658,14 @@ function _itemRowHtml(){
 }
 function calcTotalCartao(){
   var el=document.getElementById('cartao-total');if(!el)return;
-  var vals=Array.from(document.querySelectorAll('.f-item-val')).map(function(i){return parseFloat(i.value.replace(',','.'))||0;});
-  var total=vals.reduce(function(s,v){return s+v;},0);
-  el.innerHTML=total>0?'Total desta fatura: <strong style="color:var(--gold)">'+BRL(total)+'</strong>':'';
+  var items=document.querySelectorAll('.cartao-item');
+  var total=0;
+  items.forEach(function(row){
+    var v=parseVal(row.querySelector('.f-item-val').value);
+    // Cada parcela entra com o valor cheio neste mês (valor é por parcela)
+    if(v>0) total+=v;
+  });
+  el.innerHTML=total>0?'Total desta fatura: <strong style="color:var(--gold)">'+BRL(total)+'</strong> <span style="font-size:11px;color:var(--text2)">(itens parcelados criam faturas futuras automaticamente)</span>':'';
 }
 function addItem(){var c=document.createElement('div');c.innerHTML=_itemRowHtml();document.getElementById('f-itens').appendChild(c.firstChild);}
 function removeItem(btn){btn.parentElement.remove();calcTotalCartao();}
@@ -703,7 +714,7 @@ async function salvaNovaDesp(tipo){
   try{
     if(tipo==='avulsa'){
       var desc=document.getElementById('f-desc').value.trim();
-      var val=parseFloat(document.getElementById('f-val').value.replace(',','.'));
+      var val=parseVal(document.getElementById('f-val').value);
       if(!desc||isNaN(val)){T('Preencha descrição e valor.','err');L(0);return;}
       var st=document.getElementById('f-st').value,vn=document.getElementById('f-vn').value,pg=document.getElementById('f-pg').value;
       var r=await SB.from('lancamentos').insert({user_id:CU.id,tipo:'despesa_avulsa',descricao:desc,valor:val,
@@ -713,7 +724,7 @@ async function salvaNovaDesp(tipo){
 
     } else if(tipo==='multiplas'){
       var desc=document.getElementById('f-desc').value.trim();
-      var val=parseFloat(document.getElementById('f-val').value.replace(',','.'));
+      var val=parseVal(document.getElementById('f-val').value);
       if(!desc||isNaN(val)){T('Preencha descrição e valor.','err');L(0);return;}
       var st=document.getElementById('f-st').value;
       var datas=Array.from(document.querySelectorAll('.f-data-item')).map(function(i){return i.value;}).filter(Boolean);
@@ -730,7 +741,7 @@ async function salvaNovaDesp(tipo){
     } else if(tipo==='recorrente'){
       var nome=document.getElementById('f-desc').value.trim();
       var dv=document.getElementById('f-dia').value;
-      var val=parseFloat(document.getElementById('f-val').value.replace(',','.'));
+      var val=parseVal(document.getElementById('f-val').value);
       var cat=document.getElementById('f-cat').value;
       if(!nome||!dv||isNaN(val)){T('Preencha todos os campos.','err');L(0);return;}
       var dia=parseInt(dv.split('-')[2]);
@@ -741,7 +752,7 @@ async function salvaNovaDesp(tipo){
 
     } else if(tipo==='parcelada'){
       var desc=document.getElementById('f-desc').value.trim();
-      var val=parseFloat(document.getElementById('f-val').value.replace(',','.'));
+      var val=parseVal(document.getElementById('f-val').value);
       var n=parseInt(document.getElementById('f-parc').value);
       var vn=document.getElementById('f-vn').value,intv=document.getElementById('f-int').value,st=document.getElementById('f-st').value;
       if(!desc||isNaN(val)||!vn||isNaN(n)||n<1){T('Preencha todos os campos.','err');L(0);return;}
@@ -763,7 +774,7 @@ async function salvaNovaDesp(tipo){
       if(!cardName||!vn){T('Informe o nome do cartão e a data de vencimento.','err');L(0);return;}
       var dt0=new Date(vn+'T12:00:00'),fMes=dt0.getMonth()+1,fAno=dt0.getFullYear();
       var descs=Array.from(document.querySelectorAll('.f-item-desc')).map(function(i){return i.value.trim();});
-      var vals=Array.from(document.querySelectorAll('.f-item-val')).map(function(i){return parseFloat(i.value.replace(',','.'))||0;});
+      var vals=Array.from(document.querySelectorAll('.f-item-val')).map(function(i){return parseVal(i.value);});
       var parcs=Array.from(document.querySelectorAll('.f-item-parc')).map(function(i){return parseInt(i.value)||1;});
       if(!descs.filter(Boolean).length){T('Adicione ao menos um item.','err');L(0);return;}
       // Cria fatura principal deste mês
@@ -837,7 +848,7 @@ function _abreEdit(l){
 }
 async function salvaEdit(id){
   var desc=document.getElementById('el-d').value.trim();
-  var val=parseFloat(document.getElementById('el-v').value.replace(',','.'));
+  var val=parseVal(document.getElementById('el-v').value);
   if(!desc||isNaN(val)){T('Preencha descrição e valor.','err');return;}
   L(1);fechaModal();
   var r=await SB.from('lancamentos').update({descricao:desc,valor:val,
