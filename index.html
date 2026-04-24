@@ -482,15 +482,10 @@ function kTabela(){
   var rows='';
 
   // ── RECORRENTES ──
-  if(recorrentes.length){
-    rows+='<tr><td colspan="6" style="background:rgba(201,168,76,0.08);padding:8px 15px;font-size:10.5px;font-weight:700;color:var(--gold);text-transform:uppercase;letter-spacing:.1em;border-top:none">🔁 Recorrentes</td></tr>';
-    recorrentes.forEach(function(l){rows+=rowHtml(l,hj);});
-  }
+  recorrentes.forEach(function(l){rows+=rowHtml(l,hj);});
 
   // ── CARTÃO ──
-  if(faturas.length){
-    rows+='<tr><td colspan="6" style="background:rgba(129,140,248,0.08);padding:8px 15px;font-size:10.5px;font-weight:700;color:#818cf8;text-transform:uppercase;letter-spacing:.1em">💳 Cartão de Crédito</td></tr>';
-    faturas.forEach(function(fat){
+  faturas.forEach(function(fat){
       var fatItens=itens.filter(function(it){return it.parent_id===fat.id;}).sort(function(a,b){return (a.descricao||'').localeCompare(b.descricao||'');});
       var v=fat.status==='a_pagar'&&fat.data_vencimento&&fat.data_vencimento<hj;
       var p=fat.status==='pago';
@@ -518,22 +513,10 @@ function kTabela(){
           '<td style="color:var(--text2);font-size:13px">'+BRL(it.valor)+'</td>'+
           '<td></td><td></td></tr>';
       });
-    });
-  }
+  });
 
-  // ── DESPESAS ──
-  if(outros.length){
-    rows+='<tr><td colspan="6" style="background:rgba(139,143,168,0.08);padding:8px 15px;font-size:10.5px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.1em">📌 Despesas</td></tr>';
-    var lastBase='';
-    outros.forEach(function(l,i){
-      var base=(l.descricao||'').replace(/\s*\(\d+\/\d+\)\s*$/,'').trim();
-      if(i>0&&base!==lastBase){
-        rows+='<tr><td colspan="6" style="height:4px;padding:0;border:none;background:rgba(255,255,255,0.02)"></td></tr>';
-      }
-      lastBase=base;
-      rows+=rowHtml(l,hj);
-    });
-  }
+
+  outros.forEach(function(l){rows+=rowHtml(l,hj);});
 
   tb.innerHTML=rows;
 }
