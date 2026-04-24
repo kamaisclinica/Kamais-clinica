@@ -389,27 +389,22 @@ async function dPago(id){
 var KM=new Date().getMonth()+1, KA=new Date().getFullYear(), KL=[], KLoc=0;
 var _ger=false;
 
-// Ícones automáticos por descrição
 function getIco(desc){
   var d=(desc||'').toLowerCase();
   if(d.includes('aluguel')) return '🏠';
-  if(d.includes('energia')||d.includes('equatorial')||d.includes('luz')||d.includes('eletric')) return '⚡';
-  if(d.includes('internet')||d.includes('vivo')||d.includes('claro')||d.includes('tim')||d.includes('fibra')) return '📶';
+  if(d.includes('energia')||d.includes('equatorial')||d.includes('luz')) return '⚡';
+  if(d.includes('internet')||d.includes('vivo')||d.includes('fibra')||d.includes('claro')) return '📶';
   if(d.includes('limpeza')) return '🧹';
   if(d.includes('condomin')) return '🏢';
-  if(d.includes('estacion')||d.includes('parking')) return '🚗';
+  if(d.includes('estacion')) return '🚗';
   if(d.includes('seguro')) return '🛡️';
-  if(d.includes('cartão')||d.includes('cartao')) return '💳';
   if(d.includes('café')||d.includes('cafe')) return '☕';
   if(d.includes('amazon')) return '📦';
-  if(d.includes('mercado')||d.includes('atacad')||d.includes('superm')||d.includes('bazar')) return '🛒';
+  if(d.includes('mercado')||d.includes('atacad')||d.includes('bazar')||d.includes('balinha')) return '🛒';
   if(d.includes('agua')||d.includes('água')) return '💧';
   if(d.includes('gas')||d.includes('gás')) return '🔥';
-  if(d.includes('telefone')||d.includes('celular')) return '📱';
-  if(d.includes('contador')||d.includes('contabil')) return '📊';
-  if(d.includes('iptu')||d.includes('ipva')||d.includes('imposto')) return '📋';
-  if(d.includes('salario')||d.includes('salário')||d.includes('folha')) return '👥';
-  if(d.includes('farmac')||d.includes('medic')||d.includes('saude')||d.includes('saúde')) return '💊';
+  if(d.includes('iptu')||d.includes('ipva')) return '📋';
+  if(d.includes('cola')) return '🖼️';
   return '📌';
 }
 
@@ -417,15 +412,12 @@ async function pgContas(){
   document.getElementById('tb-acts').innerHTML=
     '<div class="mn"><button class="mn-btn" id="k-ant">◀</button><span class="mn-lbl" id="k-lbl"></span><button class="mn-btn" id="k-prox">▶</button></div>'+
     '<button class="btn btn-gold" onclick="abreNovaDesp()">+ Nova despesa</button>';
-
   document.getElementById('pg-body').innerHTML=
     '<div class="loc-bar"><span class="loc-l">🏠 Receita de Locação (50/50)</span>'+
     '<input class="loc-inp" id="k-loc" type="number" min="0" step="0.01" placeholder="0,00"/>'+
     '<button class="btn btn-ghost btn-sm" onclick="kSalvaLoc()">Salvar</button></div>'+
-    '<div class="tw"><table><thead><tr><th>Data Pgto</th><th>Data Venc</th><th>Descrição</th><th>Valor</th><th>Status</th><th>Ações</th></tr></thead>'+
-    '<tbody id="k-tb"></tbody></table></div>'+
+    '<div class="tw" id="k-tw"><table><thead><tr><th>Data Pgto</th><th>Data Venc</th><th>Descrição</th><th>Valor</th><th>Status</th><th>Ações</th></tr></thead><tbody id="k-tb"></tbody></table></div>'+
     '<div id="k-em" style="display:none" class="empty">Nenhum lançamento.<br>Clique em "+ Nova despesa" para adicionar.</div>';
-
   document.getElementById('k-ant').onclick=function(){KM--;if(KM<1){KM=12;KA--;}kLoad();};
   document.getElementById('k-prox').onclick=function(){KM++;if(KM>12){KM=1;KA++;}kLoad();};
   await kLoad();
@@ -438,6 +430,13 @@ async function kLoad(){
     await geraRec(KM,KA);
     var ld=await SB.from('lancamentos').select('*').eq('user_id',CU.id).eq('mes',KM).eq('ano',KA).order('data_vencimento',{ascending:true,nullsFirst:false});
     KL=ld.data||[];
+    // Load items of faturas in this month
+    var fatIds=KL.filter(function(l){return l.tipo==='cartao_fatura';}).map(function(l){return l.id;});
+    if(fatIds.length){
+      var itR=await SB.from('lancamentos').select('*').in('parent_id',fatIds);
+      var ex=new Set(KL.map(function(l){return l.id;}));
+      (itR.data||[]).forEach(function(it){if(!ex.has(it.id))KL.push(it);});
+    }
     KLoc=await getLoc(KM,KA);
     var li=document.getElementById('k-loc'); if(li) li.value=KLoc||'';
     kTabela();
@@ -445,16 +444,16 @@ async function kLoad(){
 }
 
 async function geraRec(m,a){
-  if(_ger) return; _ger=true;
+  if(_ger)return; _ger=true;
   try{
     var rf=await SB.from('contas_fixas').select('*').eq('user_id',CU.id).eq('ativa',true);
-    if(!rf.data||!rf.data.length) return;
+    if(!rf.data||!rf.data.length)return;
     var re=await SB.from('lancamentos').select('conta_fixa_id').eq('user_id',CU.id).eq('mes',m).eq('ano',a).eq('tipo','conta_fixa');
     var ids=new Set((re.data||[]).map(function(l){return l.conta_fixa_id;}));
     var novas=rf.data.filter(function(f){return !ids.has(f.id);});
-    if(!novas.length) return;
+    if(!novas.length)return;
     var ins=novas.map(function(f){
-      var dm=new Date(a,m,0).getDate(), dr=Math.min(f.dia_vencimento,dm);
+      var dm=new Date(a,m,0).getDate(),dr=Math.min(f.dia_vencimento,dm);
       return{user_id:CU.id,tipo:'conta_fixa',descricao:f.nome,valor:f.valor_padrao,
         data_vencimento:a+'-'+String(m).padStart(2,'0')+'-'+String(dr).padStart(2,'0'),
         data_pagamento:null,status:'a_pagar',mes:m,ano:a,conta_fixa_id:f.id};
@@ -464,57 +463,123 @@ async function geraRec(m,a){
 }
 
 function kTabela(){
-  var tb=document.getElementById('k-tb'), em=document.getElementById('k-em'), tw=document.querySelector('.tw');
-  if(!tb) return;
+  var tb=document.getElementById('k-tb'),em=document.getElementById('k-em'),tw=document.getElementById('k-tw');
+  if(!tb)return;
   var hj=new Date().toISOString().substring(0,10);
-  if(!KL.length){if(tw)tw.style.display='none';em.style.display='block';return;}
-  if(tw)tw.style.display=''; em.style.display='none';
-  tb.innerHTML=KL.map(function(l){
-    var v=l.status==='a_pagar'&&l.data_vencimento&&l.data_vencimento<hj;
-    var p=l.status==='pago';
-    var rc=v?'tr-v':p?'tr-p':'', bc=p?'bg':v?'br':'ba', bt=p?'✅ Pago':v?'🔴 Vencida':'⏳ A pagar';
-    var ico=getIco(l.descricao);
-    var badge=l.tipo==='conta_fixa'?' <span style="font-size:10px;background:rgba(201,168,76,0.15);color:var(--gold);border:1px solid rgba(201,168,76,0.3);border-radius:4px;padding:2px 6px;font-weight:600">Recorrente</span>':'';
-    var descCell=ico+' '+l.descricao+badge;
-    var acoes='<div class="ag">'+
+  var recorrentes=KL.filter(function(l){return l.tipo==='conta_fixa';}).sort(function(a,b){return (a.data_vencimento||'').localeCompare(b.data_vencimento||'');});
+  var faturas=KL.filter(function(l){return l.tipo==='cartao_fatura';}).sort(function(a,b){return (a.data_vencimento||'').localeCompare(b.data_vencimento||'');});
+  var itens=KL.filter(function(l){return l.tipo==='cartao_item';});
+  var outros=KL.filter(function(l){return l.tipo!=='conta_fixa'&&l.tipo!=='cartao_fatura'&&l.tipo!=='cartao_item';}).sort(function(a,b){
+    var ba=(a.descricao||'').replace(/\s*\(\d+\/\d+\)\s*$/,'').trim();
+    var bb=(b.descricao||'').replace(/\s*\(\d+\/\d+\)\s*$/,'').trim();
+    if(ba!==bb)return ba.localeCompare(bb,'pt-BR');
+    return (a.data_vencimento||'').localeCompare(b.data_vencimento||'');
+  });
+  if(!recorrentes.length&&!faturas.length&&!outros.length){
+    if(tw)tw.style.display='none';em.style.display='block';return;
+  }
+  if(tw)tw.style.display='';em.style.display='none';
+  var rows='';
+
+  // ── RECORRENTES ──
+  if(recorrentes.length){
+    rows+='<tr><td colspan="6" style="background:rgba(201,168,76,0.08);padding:8px 15px;font-size:10.5px;font-weight:700;color:var(--gold);text-transform:uppercase;letter-spacing:.1em;border-top:none">🔁 Recorrentes</td></tr>';
+    recorrentes.forEach(function(l){rows+=rowHtml(l,hj);});
+  }
+
+  // ── CARTÃO ──
+  if(faturas.length){
+    rows+='<tr><td colspan="6" style="background:rgba(129,140,248,0.08);padding:8px 15px;font-size:10.5px;font-weight:700;color:#818cf8;text-transform:uppercase;letter-spacing:.1em">💳 Cartão de Crédito</td></tr>';
+    faturas.forEach(function(fat){
+      var fatItens=itens.filter(function(it){return it.parent_id===fat.id;}).sort(function(a,b){return (a.descricao||'').localeCompare(b.descricao||'');});
+      var v=fat.status==='a_pagar'&&fat.data_vencimento&&fat.data_vencimento<hj;
+      var p=fat.status==='pago';
+      var rc=v?'tr-v':p?'tr-p':'',bc=p?'bg':v?'br':'ba',bt=p?'✅ Pago':v?'🔴 Vencida':'⏳ A pagar';
+      // Fatura header
+      rows+='<tr class="'+rc+'" style="font-weight:600">'+
+        '<td>'+DT(fat.data_pagamento)+'</td>'+
+        '<td>'+DT(fat.data_vencimento)+'</td>'+
+        '<td>💳 <strong>'+fat.descricao+'</strong>'+
+        (fatItens.length?' <span style="font-size:11px;color:var(--text2);font-weight:400">'+(fatItens.length)+' it'+(fatItens.length===1?'em':'ens')+'</span>':'')+
+        '</td>'+
+        '<td style="font-weight:700;color:var(--gold)">'+BRL(fat.valor)+'</td>'+
+        '<td><span class="badge '+bc+'">'+bt+'</span></td>'+
+        '<td><div class="ag">'+
+          (p?'':'<button class="btn-g" style="border-radius:8px;font-family:inherit;font-weight:600;cursor:pointer;height:32px;padding:0 12px;font-size:12px" onclick="kConfirmaPago(\''+fat.id+'\',\''+fat.data_vencimento+'\')">✅</button>')+
+          '<button class="btn-a" style="border-radius:8px;font-family:inherit;font-weight:600;cursor:pointer;height:32px;padding:0 12px;font-size:12px" onclick="editaFatura(\''+fat.id+'\')">✏️</button>'+
+          '<button class="btn-r" style="border-radius:8px;font-family:inherit;font-weight:600;cursor:pointer;height:32px;padding:0 12px;font-size:12px" onclick="kDel(\''+fat.id+'\',true)">🗑️</button>'+
+        '</div></td></tr>';
+      // Items indentados
+      fatItens.forEach(function(it){
+        rows+='<tr style="background:rgba(255,255,255,0.012)">'+
+          '<td style="color:var(--text3);font-size:12px"></td>'+
+          '<td style="color:var(--text3);font-size:12px">'+DT(it.data_vencimento)+'</td>'+
+          '<td style="padding-left:32px;color:var(--text2);font-size:13px">'+getIco(it.descricao)+' '+it.descricao+'</td>'+
+          '<td style="color:var(--text2);font-size:13px">'+BRL(it.valor)+'</td>'+
+          '<td></td><td></td></tr>';
+      });
+    });
+  }
+
+  // ── DESPESAS ──
+  if(outros.length){
+    rows+='<tr><td colspan="6" style="background:rgba(139,143,168,0.08);padding:8px 15px;font-size:10.5px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.1em">📌 Despesas</td></tr>';
+    var lastBase='';
+    outros.forEach(function(l,i){
+      var base=(l.descricao||'').replace(/\s*\(\d+\/\d+\)\s*$/,'').trim();
+      if(i>0&&base!==lastBase){
+        rows+='<tr><td colspan="6" style="height:4px;padding:0;border:none;background:rgba(255,255,255,0.02)"></td></tr>';
+      }
+      lastBase=base;
+      rows+=rowHtml(l,hj);
+    });
+  }
+
+  tb.innerHTML=rows;
+}
+
+function rowHtml(l,hj){
+  var v=l.status==='a_pagar'&&l.data_vencimento&&l.data_vencimento<hj;
+  var p=l.status==='pago';
+  var rc=v?'tr-v':p?'tr-p':'',bc=p?'bg':v?'br':'ba',bt=p?'✅ Pago':v?'🔴 Vencida':'⏳ A pagar';
+  var ico=getIco(l.descricao);
+  var badge=l.tipo==='conta_fixa'?' <span style="font-size:10px;background:rgba(201,168,76,0.15);color:var(--gold);border:1px solid rgba(201,168,76,0.3);border-radius:4px;padding:2px 6px;font-weight:600">Recorrente</span>':'';
+  return '<tr class="'+rc+'">'+
+    '<td>'+DT(l.data_pagamento)+'</td><td>'+DT(l.data_vencimento)+'</td>'+
+    '<td>'+ico+' '+l.descricao+badge+'</td>'+
+    '<td style="font-weight:700;color:var(--gold)">'+BRL(l.valor)+'</td>'+
+    '<td><span class="badge '+bc+'">'+bt+'</span></td>'+
+    '<td><div class="ag">'+
       (p?'':'<button class="btn-g" style="border-radius:8px;font-family:inherit;font-weight:600;cursor:pointer;height:32px;padding:0 12px;font-size:12px" onclick="kConfirmaPago(\''+l.id+'\',\''+l.data_vencimento+'\')">✅</button>')+
       '<button class="btn-a" style="border-radius:8px;font-family:inherit;font-weight:600;cursor:pointer;height:32px;padding:0 12px;font-size:12px" onclick="kEdit(\''+l.id+'\')">✏️</button>'+
-      '<button class="btn-r" style="border-radius:8px;font-family:inherit;font-weight:600;cursor:pointer;height:32px;padding:0 12px;font-size:12px" onclick="kDel(\''+l.id+'\')">🗑️</button>'+
-      '</div>';
-    return '<tr class="'+rc+'">'+
-      '<td>'+DT(l.data_pagamento)+'</td>'+
-      '<td>'+DT(l.data_vencimento)+'</td>'+
-      '<td>'+descCell+'</td>'+
-      '<td style="font-weight:700;color:var(--gold)">'+BRL(l.valor)+'</td>'+
-      '<td><span class="badge '+bc+'">'+bt+'</span></td>'+
-      '<td>'+acoes+'</td></tr>';
-  }).join('');
+      '<button class="btn-r" style="border-radius:8px;font-family:inherit;font-weight:600;cursor:pointer;height:32px;padding:0 12px;font-size:12px" onclick="kDel(\''+l.id+'\',false)">🗑️</button>'+
+    '</div></td></tr>';
 }
 
-// Marcar pago — pré-preenche com a data de vencimento, permite editar
-function kConfirmaPago(id, dataVenc){
-  var defaultDate = dataVenc || new Date().toISOString().substring(0,10);
+function kConfirmaPago(id,dataVenc){
+  var d=dataVenc||new Date().toISOString().substring(0,10);
   abreModal('Confirmar pagamento',
-    '<p style="color:var(--text2);font-size:13px;margin-bottom:16px">Confirme a data em que a conta foi paga:</p>'+
-    '<div class="fg"><label>Data de pagamento</label><input id="pg-data" type="date" value="'+defaultDate+'"/></div>'+
-    '<div class="fa">'+
-    '<button class="btn btn-ghost btn-sm" onclick="fechaModal()">Cancelar</button>'+
-    '<button class="btn btn-gold btn-sm" onclick="kPago(\''+id+'\')">Confirmar</button>'+
-    '</div>');
+    '<p style="color:var(--text2);font-size:13px;margin-bottom:16px">Confirme a data em que foi pago. Pré-preenchido com a data de vencimento:</p>'+
+    '<div class="fg"><label>Data de pagamento</label><input id="pg-data" type="date" value="'+d+'"/></div>'+
+    '<div class="fa"><button class="btn btn-ghost btn-sm" onclick="fechaModal()">Cancelar</button>'+
+    '<button class="btn btn-gold btn-sm" onclick="kPago(\''+id+'\')">Confirmar</button></div>');
 }
-
 async function kPago(id){
-  var dataPgto=document.getElementById('pg-data').value;
-  if(!dataPgto){T('Informe a data de pagamento.','err');return;}
+  var dt=document.getElementById('pg-data').value;
+  if(!dt){T('Informe a data.','err');return;}
   L(1);fechaModal();
-  await SB.from('lancamentos').update({status:'pago',data_pagamento:dataPgto}).eq('id',id).eq('user_id',CU.id);
-  L(0); T('Marcado como pago!'); kLoad();
+  await SB.from('lancamentos').update({status:'pago',data_pagamento:dt}).eq('id',id).eq('user_id',CU.id);
+  L(0);T('Marcado como pago!');kLoad();
 }
-
-async function kDel(id){
-  if(!await confirma('Excluir este lançamento?')) return;
-  L(1);await SB.from('lancamentos').delete().eq('id',id).eq('user_id',CU.id);L(0);
-  T('Excluído.');kLoad();
+async function kDel(id,isFatura){
+  var msg=isFatura?'Excluir esta fatura e todos os seus itens?':'Excluir este lançamento?';
+  if(!await confirma(msg))return;
+  L(1);
+  if(isFatura){
+    await SB.from('lancamentos').delete().eq('parent_id',id).eq('user_id',CU.id);
+  }
+  await SB.from('lancamentos').delete().eq('id',id).eq('user_id',CU.id);
+  L(0);T('Excluído.');kLoad();
 }
 function kEdit(id){var l=KL.find(function(x){return x.id===id;});if(!l)return;_abreEdit(l);}
 async function kSalvaLoc(){
@@ -522,136 +587,106 @@ async function kSalvaLoc(){
   L(1);try{await saveLoc(KM,KA,v);KLoc=v;T('Receita de locação salva!');}catch(e){T('Erro: '+e.message,'err');}finally{L(0);}
 }
 
-// ── MODAL NOVA DESPESA ──────────────────────────────────────────
-function abreNovaDesp(){ _tipoDesp('avulsa'); }
-
+// ── MODAL NOVA DESPESA ──
+function abreNovaDesp(){_tipoDesp('avulsa');}
 function _tipoDesp(tipo){
-  var tabs=[
-    {k:'avulsa',    label:'Avulsa'},
-    {k:'multiplas', label:'Múltiplas'},
-    {k:'recorrente',label:'Recorrente'},
-    {k:'parcelada', label:'Parcelada'},
-    {k:'cartao',    label:'Cartão'},
-  ];
+  var tabs=[{k:'avulsa',label:'Avulsa'},{k:'multiplas',label:'Múltiplas'},{k:'recorrente',label:'Recorrente'},{k:'parcelada',label:'Parcelada'},{k:'cartao',label:'Cartão'}];
   var tabsHtml=tabs.map(function(t){
-    var ativo=t.k===tipo;
-    var s=ativo?'background:var(--gold);color:#0f1117;font-weight:700;':'background:transparent;color:var(--text2);';
-    return '<button onclick="_tipoDesp(\''+t.k+'\')" style="'+s+'flex:1;padding:9px 4px;border-radius:8px;font-size:12.5px;font-family:inherit;cursor:pointer;border:none;transition:all .15s;white-space:nowrap">'+t.label+'</button>';
+    var a=t.k===tipo;
+    return '<button onclick="_tipoDesp(\''+t.k+'\')" style="'+(a?'background:var(--gold);color:#0f1117;font-weight:700;':'background:transparent;color:var(--text2);')+'flex:1;padding:9px 4px;border-radius:8px;font-size:12.5px;font-family:inherit;cursor:pointer;border:none;transition:all .15s;white-space:nowrap">'+t.label+'</button>';
   }).join('');
-
   var fields='';
   if(tipo==='avulsa'){
-    fields=
-      '<div class="fg"><label>Descrição *</label><input id="f-desc" placeholder="Ex: Limpeza, Energia…"/></div>'+
-      '<div class="fr">'+
-        '<div class="fg"><label>Valor (R$) *</label><input id="f-val" type="number" min="0" step="0.01"/></div>'+
-        '<div class="fg"><label>Status</label><select id="f-st"><option value="a_pagar">⏳ A pagar</option><option value="pago">✅ Pago</option></select></div>'+
-      '</div>'+
-      '<div class="fr">'+
-        '<div class="fg"><label>Data de vencimento</label><input id="f-vn" type="date"/></div>'+
-        '<div class="fg"><label>Data de pagamento</label><input id="f-pg" type="date"/></div>'+
-      '</div>';
+    fields='<div class="fg"><label>Descrição *</label><input id="f-desc" placeholder="Ex: Limpeza, Energia…"/></div>'+
+      '<div class="fr"><div class="fg"><label>Valor (R$) *</label><input id="f-val" type="text" inputmode="decimal" placeholder="0,00"/></div>'+
+      '<div class="fg"><label>Status</label><select id="f-st"><option value="a_pagar">⏳ A pagar</option><option value="pago">✅ Pago</option></select></div></div>'+
+      '<div class="fr"><div class="fg"><label>Data de vencimento</label><input id="f-vn" type="date"/></div>'+
+      '<div class="fg"><label>Data de pagamento</label><input id="f-pg" type="date"/></div></div>';
   } else if(tipo==='multiplas'){
-    fields=
-      '<div class="fg"><label>Descrição *</label><input id="f-desc" placeholder="Ex: Limpeza consultório"/></div>'+
-      '<div class="fr">'+
-        '<div class="fg"><label>Valor por ocorrência (R$) *</label><input id="f-val" type="number" min="0" step="0.01"/></div>'+
-        '<div class="fg"><label>Status padrão</label><select id="f-st"><option value="a_pagar">⏳ A pagar</option><option value="pago">✅ Pago</option></select></div>'+
-      '</div>'+
-      '<div class="fg"><label>Datas de vencimento</label><div id="f-datas"><div style="display:flex;gap:8px;margin-bottom:8px"><input type="date" class="f-data-item" style="flex:1;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:10px 13px;color:var(--text);font-family:inherit;outline:none"/><button onclick="removData(this)" style="background:var(--red-bg);color:var(--red);border:none;border-radius:8px;padding:0 12px;cursor:pointer;font-size:16px">✕</button></div></div>'+
+    fields='<div class="fg"><label>Descrição *</label><input id="f-desc" placeholder="Ex: Limpeza consultório"/></div>'+
+      '<div class="fr"><div class="fg"><label>Valor por ocorrência (R$) *</label><input id="f-val" type="text" inputmode="decimal" placeholder="0,00"/></div>'+
+      '<div class="fg"><label>Status</label><select id="f-st"><option value="a_pagar">⏳ A pagar</option><option value="pago">✅ Pago</option></select></div></div>'+
+      '<div class="fg"><label>Datas de vencimento</label><div id="f-datas">'+_dataRowHtml()+'</div>'+
       '<button onclick="addData()" class="btn btn-ghost btn-sm" style="margin-top:4px">+ Adicionar data</button></div>';
   } else if(tipo==='recorrente'){
-    var hj=new Date(), ms=String(hj.getMonth()+1).padStart(2,'0');
-    fields=
-      '<div class="fg"><label>Descrição *</label><input id="f-desc" placeholder="Ex: Aluguel, Internet…"/></div>'+
-      '<div class="fr">'+
-        '<div class="fg"><label>Dia de vencimento *</label><input id="f-dia" type="date" value="'+hj.getFullYear()+'-'+ms+'-01'+'"/><p style="font-size:11px;color:var(--text2);margin-top:4px">Apenas o <strong>dia</strong> será usado mensalmente.</p></div>'+
-        '<div class="fg"><label>Valor (R$) *</label><input id="f-val" type="number" min="0" step="0.01"/></div>'+
-      '</div>'+
+    var hj=new Date(),ms=String(hj.getMonth()+1).padStart(2,'0');
+    fields='<div class="fg"><label>Descrição *</label><input id="f-desc" placeholder="Ex: Aluguel, Internet…"/></div>'+
+      '<div class="fr"><div class="fg"><label>Dia de vencimento *</label><input id="f-dia" type="date" value="'+hj.getFullYear()+'-'+ms+'-01'+'"/><p style="font-size:11px;color:var(--text2);margin-top:4px">Apenas o <strong>dia</strong> é usado mensalmente.</p></div>'+
+      '<div class="fg"><label>Valor (R$) *</label><input id="f-val" type="text" inputmode="decimal" placeholder="0,00"/></div></div>'+
       '<div class="fg"><label>Categoria</label><select id="f-cat"><option value="Fixa">Fixa</option><option value="Variável">Variável</option></select></div>';
   } else if(tipo==='parcelada'){
-    fields=
-      '<div class="fg"><label>Descrição *</label><input id="f-desc" placeholder="Ex: Seguro sala, Curso…"/></div>'+
-      '<div class="fr">'+
-        '<div class="fg"><label>Valor por parcela (R$) *</label><input id="f-val" type="text" inputmode="decimal" placeholder="0,00" oninput="prevParcelas()"/></div>'+
-        '<div class="fg"><label>Nº de parcelas *</label><input id="f-parc" type="text" inputmode="numeric" placeholder="Ex: 8" value="3" oninput="prevParcelas()"/></div>'+
-      '</div>'+
-      '<div class="fr">'+
-        '<div class="fg"><label>1ª parcela — Data venc *</label><input id="f-vn" type="date" oninput="prevParcelas()"/></div>'+
-        '<div class="fg"><label>Intervalo</label><select id="f-int" onchange="prevParcelas()"><option value="mensal">Mensal</option><option value="semanal">Semanal</option></select></div>'+
-      '</div>'+
+    fields='<div class="fg"><label>Descrição *</label><input id="f-desc" placeholder="Ex: Seguro sala, Curso…"/></div>'+
+      '<div class="fr"><div class="fg"><label>Valor por parcela (R$) *</label><input id="f-val" type="text" inputmode="decimal" placeholder="0,00" oninput="prevParcelas()"/></div>'+
+      '<div class="fg"><label>Nº de parcelas *</label><input id="f-parc" type="text" inputmode="numeric" placeholder="Ex: 8" value="3" oninput="prevParcelas()"/></div></div>'+
+      '<div class="fr"><div class="fg"><label>1ª parcela — Data venc *</label><input id="f-vn" type="date" oninput="prevParcelas()"/></div>'+
+      '<div class="fg"><label>Intervalo</label><select id="f-int" onchange="prevParcelas()"><option value="mensal">Mensal</option><option value="semanal">Semanal</option></select></div></div>'+
       '<div class="fg"><label>Status padrão</label><select id="f-st"><option value="a_pagar">⏳ A pagar</option><option value="pago">✅ Pago</option></select></div>'+
       '<div id="prev-parcelas" style="margin-top:4px"></div>';
   } else if(tipo==='cartao'){
-    fields=
-      '<div class="fg"><label>Fatura / descrição do cartão *</label><input id="f-desc" placeholder="Ex: Cartão Nubank"/></div>'+
-      '<div class="fr">'+
-        '<div class="fg"><label>Data de vencimento *</label><input id="f-vn" type="date"/></div>'+
-        '<div class="fg"><label>Status padrão</label><select id="f-st"><option value="a_pagar">⏳ A pagar</option><option value="pago">✅ Pago</option></select></div>'+
-      '</div>'+
-      '<div class="fg"><label>Itens do cartão</label>'+
-      '<div style="display:grid;grid-template-columns:1fr auto auto auto;gap:6px;margin-bottom:6px;padding:0 2px">'+
-        '<span style="font-size:10px;color:var(--text2);font-weight:600;text-transform:uppercase;padding:0 4px">Descrição</span>'+
-        '<span style="font-size:10px;color:var(--text2);font-weight:600;text-transform:uppercase;text-align:center">Valor R$</span>'+
-        '<span style="font-size:10px;color:var(--text2);font-weight:600;text-transform:uppercase;text-align:center">Parcelas</span>'+
-        '<span></span>'+
-      '</div>'+
-      '<div id="f-itens">'+_itemRowHtml()+
-      '</div>'+
-      '<button onclick="addItem()" class="btn btn-ghost btn-sm" style="margin-top:6px">+ Adicionar item</button></div>';
+    fields=_cartaoFieldsHtml();
   }
-
   abreModal('Nova despesa',
     '<div style="display:flex;gap:4px;background:var(--bg3);padding:5px;border-radius:10px;margin-bottom:20px">'+tabsHtml+'</div>'+
-    '<div id="f-fields">'+fields+'</div>'+
-    '<div class="fa">'+
-      '<button class="btn btn-ghost btn-sm" onclick="fechaModal()">Cancelar</button>'+
-      '<button class="btn btn-gold btn-sm" onclick="salvaNovaDesp(\''+tipo+'\')">Salvar</button>'+
-    '</div>');
+    fields+
+    '<div class="fa"><button class="btn btn-ghost btn-sm" onclick="fechaModal()">Cancelar</button>'+
+    '<button class="btn btn-gold btn-sm" onclick="salvaNovaDesp(\''+tipo+'\')">Salvar</button></div>');
 }
 
-function addData(){
-  var c=document.createElement('div');
-  c.style.cssText='display:flex;gap:8px;margin-bottom:8px';
-  c.innerHTML='<input type="date" class="f-data-item" style="flex:1;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:10px 13px;color:var(--text);font-family:inherit;outline:none"/><button onclick="removData(this)" style="background:var(--red-bg);color:var(--red);border:none;border-radius:8px;padding:0 12px;cursor:pointer;font-size:16px">✕</button>';
-  document.getElementById('f-datas').appendChild(c);
+function _dataRowHtml(){
+  return '<div style="display:flex;gap:8px;margin-bottom:8px"><input type="date" class="f-data-item" style="flex:1;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:10px 13px;color:var(--text);font-family:inherit;outline:none"/><button onclick="removData(this)" style="background:var(--red-bg);color:var(--red);border:none;border-radius:8px;padding:0 12px;cursor:pointer;font-size:16px">✕</button></div>';
 }
-function removData(btn){ btn.parentElement.remove(); }
+function addData(){var c=document.createElement('div');c.innerHTML=_dataRowHtml();document.getElementById('f-datas').appendChild(c.firstChild);}
+function removData(btn){btn.parentElement.remove();}
+
+// Cartão
+function _cartaoFieldsHtml(){
+  return '<div class="fg"><label>Nome do cartão *</label><input id="f-desc" placeholder="Ex: Nubank, Inter, Itaú…"/></div>'+
+    '<div class="fr"><div class="fg"><label>Data de vencimento da fatura *</label><input id="f-vn" type="date" oninput="calcTotalCartao()"/></div>'+
+    '<div class="fg"><label>Status da fatura</label><select id="f-st"><option value="a_pagar">⏳ A pagar</option><option value="pago">✅ Pago</option></select></div></div>'+
+    '<div class="fg"><label>Itens da fatura</label>'+
+    '<div style="display:grid;grid-template-columns:1fr 95px 80px 36px;gap:5px;margin-bottom:6px;padding:0 2px">'+
+      '<span style="font-size:10px;color:var(--text2);font-weight:700;text-transform:uppercase;padding:0 4px">Descrição</span>'+
+      '<span style="font-size:10px;color:var(--text2);font-weight:700;text-transform:uppercase;text-align:right;padding-right:4px">Valor R$</span>'+
+      '<span style="font-size:10px;color:var(--text2);font-weight:700;text-transform:uppercase;text-align:center">Parcelas</span>'+
+      '<span></span></div>'+
+    '<div id="f-itens">'+_itemRowHtml()+'</div>'+
+    '<button onclick="addItem()" class="btn btn-ghost btn-sm" style="margin-top:6px">+ Adicionar item</button></div>'+
+    '<div id="cartao-total" style="margin-top:10px;text-align:right;font-size:14px;color:var(--text2)"></div>';
+}
 function _itemRowHtml(){
-  return '<div class="cartao-item" style="display:grid;grid-template-columns:1fr 90px 70px 36px;gap:6px;margin-bottom:6px">'+
-    '<input placeholder="Ex: Café, Amazon…" class="f-item-desc" style="background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:9px 12px;color:var(--text);font-family:inherit;outline:none;width:100%"/>'+
-    '<input type="text" inputmode="decimal" placeholder="0,00" class="f-item-val" style="background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:9px 10px;color:var(--text);font-family:inherit;outline:none;width:100%;text-align:right"/>'+
-    '<input type="text" inputmode="numeric" placeholder="1x" class="f-item-parc" value="1" style="background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:9px 8px;color:var(--gold);font-family:inherit;outline:none;width:100%;text-align:center;font-weight:700"/>'+
-    '<button onclick="removeItem(this)" style="background:var(--red-bg);color:var(--red);border:none;border-radius:8px;cursor:pointer;font-size:15px;width:36px">✕</button>'+
+  return '<div class="cartao-item" style="display:grid;grid-template-columns:1fr 95px 80px 36px;gap:5px;margin-bottom:6px">'+
+    '<input placeholder="Ex: Café, Farmácia…" class="f-item-desc" oninput="calcTotalCartao()" style="background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:9px 11px;color:var(--text);font-family:inherit;outline:none;width:100%"/>'+
+    '<input type="text" inputmode="decimal" placeholder="0,00" class="f-item-val" oninput="calcTotalCartao()" style="background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:9px 10px;color:var(--text);font-family:inherit;outline:none;width:100%;text-align:right"/>'+
+    '<div style="position:relative">'+
+      '<input type="text" inputmode="numeric" placeholder="1x" class="f-item-parc" value="1" oninput="calcTotalCartao()" style="background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:9px 8px;color:var(--gold);font-family:inherit;outline:none;width:100%;text-align:center;font-weight:700"/>'+
+      '<span style="position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:10px;color:var(--text3);pointer-events:none">x</span>'+
+    '</div>'+
+    '<button onclick="removeItem(this)" style="background:var(--red-bg);color:var(--red);border:none;border-radius:8px;cursor:pointer;font-size:14px;width:36px">✕</button>'+
   '</div>';
 }
-function addItem(){
-  var c=document.createElement('div');
-  c.innerHTML=_itemRowHtml();
-  document.getElementById('f-itens').appendChild(c.firstChild);
+function calcTotalCartao(){
+  var el=document.getElementById('cartao-total');if(!el)return;
+  var vals=Array.from(document.querySelectorAll('.f-item-val')).map(function(i){return parseFloat(i.value.replace(',','.'))||0;});
+  var total=vals.reduce(function(s,v){return s+v;},0);
+  el.innerHTML=total>0?'Total desta fatura: <strong style="color:var(--gold)">'+BRL(total)+'</strong>':'';
 }
-function removeItem(btn){ btn.parentElement.remove(); }
+function addItem(){var c=document.createElement('div');c.innerHTML=_itemRowHtml();document.getElementById('f-itens').appendChild(c.firstChild);}
+function removeItem(btn){btn.parentElement.remove();calcTotalCartao();}
 
 function prevParcelas(){
-  var desc=document.getElementById('f-desc')?document.getElementById('f-desc').value.trim():'';
-  var val=parseFloat(document.getElementById('f-val')?document.getElementById('f-val').value:'');
+  var val=parseFloat((document.getElementById('f-val')?document.getElementById('f-val').value:'').replace(',','.'));
   var n=parseInt(document.getElementById('f-parc')?document.getElementById('f-parc').value:'');
   var vn=document.getElementById('f-vn')?document.getElementById('f-vn').value:'';
   var intv=document.getElementById('f-int')?document.getElementById('f-int').value:'mensal';
-  var el=document.getElementById('prev-parcelas');
-  if(!el)return;
+  var el=document.getElementById('prev-parcelas');if(!el)return;
   if(!vn||isNaN(n)||n<1){el.innerHTML='';return;}
-  var rows='';
-  var dt=new Date(vn+'T12:00:00');
+  var rows='',dt=new Date(vn+'T12:00:00');
   for(var i=0;i<Math.min(n,24);i++){
     var y=dt.getFullYear(),mo=dt.getMonth()+1,dy=dt.getDate();
-    var ds=dy+'/'+String(mo).padStart(2,'0')+'/'+y;
-    var vlabel=isNaN(val)?'—':'R$ '+Number(val).toLocaleString('pt-BR',{minimumFractionDigits:2});
     rows+='<div style="display:flex;justify-content:space-between;padding:7px 12px;border-bottom:1px solid var(--border);font-size:13px">'+
       '<span style="color:var(--text2)">'+(i+1)+'/'+n+'</span>'+
-      '<span>'+ds+'</span>'+
-      '<span style="color:var(--gold);font-weight:600">'+vlabel+'</span>'+
-      '</div>';
+      '<span>'+dy+'/'+(String(mo).padStart(2,'0'))+'/'+y+'</span>'+
+      '<span style="color:var(--gold);font-weight:600">'+(isNaN(val)?'—':BRL(val))+'</span></div>';
     if(intv==='semanal'){dt.setDate(dt.getDate()+7);}else{dt.setMonth(dt.getMonth()+1);}
   }
   var extra=n>24?'<div style="text-align:center;padding:8px;font-size:12px;color:var(--text2)">… mais '+(n-24)+' parcela(s)</div>':'';
@@ -660,16 +695,29 @@ function prevParcelas(){
     rows+extra+'</div>';
 }
 
+// Encontra ou cria fatura de um cartão num mês/ano
+async function findOrCreateFatura(cardName,mes,ano,dataVenc,status){
+  var r=await SB.from('lancamentos').select('id').eq('user_id',CU.id).eq('tipo','cartao_fatura').eq('descricao',cardName).eq('mes',mes).eq('ano',ano).maybeSingle();
+  if(r.data)return r.data.id;
+  var r2=await SB.from('lancamentos').insert({user_id:CU.id,tipo:'cartao_fatura',descricao:cardName,valor:0,
+    data_vencimento:dataVenc,data_pagamento:null,status:status||'a_pagar',mes:mes,ano:ano}).select('id').single();
+  if(r2.error)throw r2.error;
+  return r2.data.id;
+}
+async function updateFaturaTotal(faturaId){
+  var r=await SB.from('lancamentos').select('valor').eq('parent_id',faturaId);
+  var total=(r.data||[]).reduce(function(s,it){return s+Number(it.valor);},0);
+  await SB.from('lancamentos').update({valor:total}).eq('id',faturaId).eq('user_id',CU.id);
+}
+
 async function salvaNovaDesp(tipo){
   L(1);fechaModal();
   try{
     if(tipo==='avulsa'){
       var desc=document.getElementById('f-desc').value.trim();
-      var val=parseFloat(document.getElementById('f-val').value);
+      var val=parseFloat(document.getElementById('f-val').value.replace(',','.'));
       if(!desc||isNaN(val)){T('Preencha descrição e valor.','err');L(0);return;}
-      var st=document.getElementById('f-st').value;
-      var vn=document.getElementById('f-vn').value;
-      var pg=document.getElementById('f-pg').value;
+      var st=document.getElementById('f-st').value,vn=document.getElementById('f-vn').value,pg=document.getElementById('f-pg').value;
       var r=await SB.from('lancamentos').insert({user_id:CU.id,tipo:'despesa_avulsa',descricao:desc,valor:val,
         data_vencimento:vn||null,data_pagamento:pg||null,status:st,mes:KM,ano:KA});
       if(r.error)throw r.error;
@@ -677,14 +725,13 @@ async function salvaNovaDesp(tipo){
 
     } else if(tipo==='multiplas'){
       var desc=document.getElementById('f-desc').value.trim();
-      var val=parseFloat(document.getElementById('f-val').value);
+      var val=parseFloat(document.getElementById('f-val').value.replace(',','.'));
       if(!desc||isNaN(val)){T('Preencha descrição e valor.','err');L(0);return;}
       var st=document.getElementById('f-st').value;
       var datas=Array.from(document.querySelectorAll('.f-data-item')).map(function(i){return i.value;}).filter(Boolean);
       if(!datas.length){T('Adicione pelo menos uma data.','err');L(0);return;}
       var ins=datas.map(function(d,i){
-        var dt=new Date(d+'T12:00:00');
-        var m=dt.getMonth()+1, a=dt.getFullYear();
+        var dt=new Date(d+'T12:00:00'),m=dt.getMonth()+1,a=dt.getFullYear();
         return{user_id:CU.id,tipo:'despesa_avulsa',descricao:desc+(datas.length>1?' ('+(i+1)+'/'+datas.length+')':''),
           valor:val,data_vencimento:d,data_pagamento:null,status:st,mes:m,ano:a};
       });
@@ -695,107 +742,111 @@ async function salvaNovaDesp(tipo){
     } else if(tipo==='recorrente'){
       var nome=document.getElementById('f-desc').value.trim();
       var dv=document.getElementById('f-dia').value;
-      var val=parseFloat(document.getElementById('f-val').value);
+      var val=parseFloat(document.getElementById('f-val').value.replace(',','.'));
       var cat=document.getElementById('f-cat').value;
       if(!nome||!dv||isNaN(val)){T('Preencha todos os campos.','err');L(0);return;}
       var dia=parseInt(dv.split('-')[2]);
       var r=await SB.from('contas_fixas').insert({user_id:CU.id,nome:nome,dia_vencimento:dia,valor_padrao:val,categoria:cat});
       if(r.error)throw r.error;
-      _ger=false; // reset flag to allow generation
+      _ger=false;
       T('Conta recorrente criada!');
 
     } else if(tipo==='parcelada'){
       var desc=document.getElementById('f-desc').value.trim();
       var val=parseFloat(document.getElementById('f-val').value.replace(',','.'));
       var n=parseInt(document.getElementById('f-parc').value);
-      var vn=document.getElementById('f-vn').value;
-      var intv=document.getElementById('f-int').value;
-      var st=document.getElementById('f-st').value;
-      if(!desc||isNaN(val)||!vn||isNaN(n)){T('Preencha todos os campos.','err');L(0);return;}
-      var ins=[];
-      var dt=new Date(vn+'T12:00:00');
+      var vn=document.getElementById('f-vn').value,intv=document.getElementById('f-int').value,st=document.getElementById('f-st').value;
+      if(!desc||isNaN(val)||!vn||isNaN(n)||n<1){T('Preencha todos os campos.','err');L(0);return;}
+      var ins=[],dt=new Date(vn+'T12:00:00');
       for(var i=0;i<n;i++){
-        var y=dt.getFullYear(), mo=dt.getMonth()+1, dy=dt.getDate();
+        var y=dt.getFullYear(),mo=dt.getMonth()+1,dy=dt.getDate();
         var ds=y+'-'+String(mo).padStart(2,'0')+'-'+String(dy).padStart(2,'0');
         ins.push({user_id:CU.id,tipo:'despesa_avulsa',descricao:desc+' ('+(i+1)+'/'+n+')',
           valor:val,data_vencimento:ds,data_pagamento:null,status:st,mes:mo,ano:y});
-        if(intv==='semanal'){dt.setDate(dt.getDate()+7);}
-        else{dt.setMonth(dt.getMonth()+1);}
+        if(intv==='semanal'){dt.setDate(dt.getDate()+7);}else{dt.setMonth(dt.getMonth()+1);}
       }
       var r=await SB.from('lancamentos').insert(ins);
       if(r.error)throw r.error;
       T(n+' parcela(s) criada(s)!');
 
     } else if(tipo==='cartao'){
-      var prefix=document.getElementById('f-desc').value.trim();
-      var vn=document.getElementById('f-vn').value;
-      var stDefault=document.getElementById('f-st').value;
-      if(!vn){T('Informe a data de vencimento.','err');L(0);return;}
+      var cardName=document.getElementById('f-desc').value.trim();
+      var vn=document.getElementById('f-vn').value,stDef=document.getElementById('f-st').value;
+      if(!cardName||!vn){T('Informe o nome do cartão e a data de vencimento.','err');L(0);return;}
+      var dt0=new Date(vn+'T12:00:00'),fMes=dt0.getMonth()+1,fAno=dt0.getFullYear();
       var descs=Array.from(document.querySelectorAll('.f-item-desc')).map(function(i){return i.value.trim();});
-      var vals=Array.from(document.querySelectorAll('.f-item-val')).map(function(i){return parseFloat(i.value.replace(',','.'));});
+      var vals=Array.from(document.querySelectorAll('.f-item-val')).map(function(i){return parseFloat(i.value.replace(',','.'))||0;});
       var parcs=Array.from(document.querySelectorAll('.f-item-parc')).map(function(i){return parseInt(i.value)||1;});
-      var ins=[];
+      if(!descs.filter(Boolean).length){T('Adicione ao menos um item.','err');L(0);return;}
+      // Cria fatura principal deste mês
+      var fatId=await findOrCreateFatura(cardName,fMes,fAno,vn,stDef);
       for(var i=0;i<descs.length;i++){
-        if(!descs[i]||isNaN(vals[i]))continue;
-        var n=parcs[i]||1;
-        var nomeBase='💳 '+(prefix?prefix+' — ':'')+descs[i];
+        if(!descs[i]||!vals[i])continue;
+        var n=parcs[i]||1,nomeBase=descs[i];
         if(n<=1){
-          // Item simples — usa a data de vencimento do cartão
-          var dt0=new Date(vn+'T12:00:00');
-          ins.push({user_id:CU.id,tipo:'despesa_avulsa',descricao:nomeBase,
-            valor:vals[i],data_vencimento:vn,data_pagamento:null,status:stDefault,
-            mes:dt0.getMonth()+1,ano:dt0.getFullYear()});
+          var ri=await SB.from('lancamentos').insert({user_id:CU.id,tipo:'cartao_item',descricao:nomeBase,
+            valor:vals[i],data_vencimento:vn,data_pagamento:null,status:'a_pagar',
+            mes:fMes,ano:fAno,parent_id:fatId});
+          if(ri.error)throw ri.error;
         } else {
-          // Item parcelado — distribui mensalmente a partir da data do cartão
-          var dt=new Date(vn+'T12:00:00');
+          // Parcelado: distribui por N meses, cada um na fatura do seu mês
+          var dtP=new Date(vn+'T12:00:00');
           for(var p=0;p<n;p++){
-            var y=dt.getFullYear(),mo=dt.getMonth()+1,dy=dt.getDate();
-            var ds=y+'-'+String(mo).padStart(2,'0')+'-'+String(dy).padStart(2,'0');
-            ins.push({user_id:CU.id,tipo:'despesa_avulsa',
-              descricao:nomeBase+' ('+(p+1)+'/'+n+')',
-              valor:vals[i],data_vencimento:ds,data_pagamento:null,status:stDefault,
-              mes:mo,ano:y});
-            dt.setMonth(dt.getMonth()+1);
+            var yP=dtP.getFullYear(),moP=dtP.getMonth()+1,dyP=dtP.getDate();
+            var dsP=yP+'-'+String(moP).padStart(2,'0')+'-'+String(dyP).padStart(2,'0');
+            var fIdP=await findOrCreateFatura(cardName,moP,yP,dsP,'a_pagar');
+            var rp=await SB.from('lancamentos').insert({user_id:CU.id,tipo:'cartao_item',
+              descricao:nomeBase+' ('+(p+1)+'/'+n+')',valor:vals[i],
+              data_vencimento:dsP,data_pagamento:null,status:'a_pagar',mes:moP,ano:yP,parent_id:fIdP});
+            if(rp.error)throw rp.error;
+            await updateFaturaTotal(fIdP);
+            dtP.setMonth(dtP.getMonth()+1);
           }
+          continue;
         }
       }
-      if(!ins.length){T('Adicione ao menos um item.','err');L(0);return;}
-      var r=await SB.from('lancamentos').insert(ins);
-      if(r.error)throw r.error;
-      var total=ins.length;
-      T(total+' lançamento(s) do cartão criado(s)!');
+      await updateFaturaTotal(fatId);
+      T('Fatura '+cardName+' criada!');
     }
     kLoad();
   }catch(e){T('Erro: '+e.message,'err');L(0);}
 }
 
-// Editar lançamento existente
+function editaFatura(id){
+  var fat=KL.find(function(x){return x.id===id;});if(!fat)return;
+  abreModal('Editar fatura — '+fat.descricao,
+    '<div class="fg"><label>Data de vencimento</label><input id="el-vn" type="date" value="'+(fat.data_vencimento||'')+'"/></div>'+
+    '<div class="fr"><div class="fg"><label>Data de pagamento</label><input id="el-pg" type="date" value="'+(fat.data_pagamento||'')+'"/></div>'+
+    '<div class="fg"><label>Status</label><select id="el-s"><option value="a_pagar" '+(fat.status==='a_pagar'?'selected':'')+'>⏳ A pagar</option><option value="pago" '+(fat.status==='pago'?'selected':'')+'>✅ Pago</option></select></div></div>'+
+    '<div class="fa"><button class="btn btn-ghost btn-sm" onclick="fechaModal()">Cancelar</button>'+
+    '<button class="btn btn-gold btn-sm" onclick="salvaEditFatura(\''+id+'\')">Salvar</button></div>');
+}
+async function salvaEditFatura(id){
+  var vn=document.getElementById('el-vn').value,pg=document.getElementById('el-pg').value,st=document.getElementById('el-s').value;
+  L(1);fechaModal();
+  await SB.from('lancamentos').update({data_vencimento:vn||null,data_pagamento:pg||null,status:st}).eq('id',id).eq('user_id',CU.id);
+  L(0);T('Fatura atualizada!');kLoad();
+}
+
 function _abreEdit(l){
   abreModal('Editar lançamento',
     '<div class="fg"><label>Descrição</label><input id="el-d" value="'+l.descricao+'"/></div>'+
-    '<div class="fr">'+
-      '<div class="fg"><label>Valor (R$)</label><input id="el-v" type="number" min="0" step="0.01" value="'+l.valor+'"/></div>'+
-      '<div class="fg"><label>Status</label><select id="el-s"><option value="a_pagar" '+(l.status==='a_pagar'?'selected':'')+'>⏳ A pagar</option><option value="pago" '+(l.status==='pago'?'selected':'')+'>✅ Pago</option></select></div>'+
-    '</div>'+
-    '<div class="fr">'+
-      '<div class="fg"><label>Data de vencimento</label><input id="el-vn" type="date" value="'+(l.data_vencimento||'')+'"/></div>'+
-      '<div class="fg"><label>Data de pagamento</label><input id="el-pg" type="date" value="'+(l.data_pagamento||'')+'"/></div>'+
-    '</div>'+
-    '<div class="fa">'+
-      '<button class="btn btn-ghost btn-sm" onclick="fechaModal()">Cancelar</button>'+
-      '<button class="btn btn-gold btn-sm" onclick="salvaEdit(\''+l.id+'\')">Salvar</button>'+
-    '</div>');
+    '<div class="fr"><div class="fg"><label>Valor (R$)</label><input id="el-v" type="text" inputmode="decimal" value="'+l.valor+'"/></div>'+
+    '<div class="fg"><label>Status</label><select id="el-s"><option value="a_pagar" '+(l.status==='a_pagar'?'selected':'')+'>⏳ A pagar</option><option value="pago" '+(l.status==='pago'?'selected':'')+'>✅ Pago</option></select></div></div>'+
+    '<div class="fr"><div class="fg"><label>Data de vencimento</label><input id="el-vn" type="date" value="'+(l.data_vencimento||'')+'"/></div>'+
+    '<div class="fg"><label>Data de pagamento</label><input id="el-pg" type="date" value="'+(l.data_pagamento||'')+'"/></div></div>'+
+    '<div class="fa"><button class="btn btn-ghost btn-sm" onclick="fechaModal()">Cancelar</button>'+
+    '<button class="btn btn-gold btn-sm" onclick="salvaEdit(\''+l.id+'\')">Salvar</button></div>');
 }
 async function salvaEdit(id){
   var desc=document.getElementById('el-d').value.trim();
-  var val=parseFloat(document.getElementById('el-v').value);
-  var st=document.getElementById('el-s').value;
-  var vn=document.getElementById('el-vn').value;
-  var pg=document.getElementById('el-pg').value;
+  var val=parseFloat(document.getElementById('el-v').value.replace(',','.'));
   if(!desc||isNaN(val)){T('Preencha descrição e valor.','err');return;}
   L(1);fechaModal();
-  var r=await SB.from('lancamentos').update({descricao:desc,valor:val,status:st,
-    data_vencimento:vn||null,data_pagamento:pg||null}).eq('id',id);
+  var r=await SB.from('lancamentos').update({descricao:desc,valor:val,
+    status:document.getElementById('el-s').value,
+    data_vencimento:document.getElementById('el-vn').value||null,
+    data_pagamento:document.getElementById('el-pg').value||null}).eq('id',id).eq('user_id',CU.id);
   L(0);if(r.error){T('Erro: '+r.error.message,'err');return;}
   T('Atualizado!');kLoad();
 }
