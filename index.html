@@ -390,6 +390,7 @@ async function dPago(id){
 // ============ CONTAS ============
 var KM=new Date().getMonth()+1, KA=new Date().getFullYear(), KL=[], KLoc=0;
 var _ger=false;
+var _salvando=false;
 
 function getIco(desc){
   var d=(desc||'').toLowerCase();
@@ -696,6 +697,8 @@ async function updateFaturaTotal(faturaId){
 }
 
 async function salvaNovaDesp(tipo){
+  if(_salvando){return;}
+  _salvando=true;
   L(1);fechaModal();
   try{
     if(tipo==='avulsa'){
@@ -795,6 +798,7 @@ async function salvaNovaDesp(tipo){
     }
     kLoad();
   }catch(e){T('Erro: '+e.message,'err');L(0);}
+  finally{_salvando=false;}
 }
 
 function editaFatura(id){
