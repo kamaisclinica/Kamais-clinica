@@ -587,17 +587,18 @@ function _tipoDesp(tipo){
       '<div class="fg"><label>Fatura / descrição do cartão *</label><input id="f-desc" placeholder="Ex: Cartão Nubank"/></div>'+
       '<div class="fr">'+
         '<div class="fg"><label>Data de vencimento *</label><input id="f-vn" type="date"/></div>'+
-        '<div class="fg"><label>Status</label><select id="f-st"><option value="a_pagar">⏳ A pagar</option><option value="pago">✅ Pago</option></select></div>'+
+        '<div class="fg"><label>Status padrão</label><select id="f-st"><option value="a_pagar">⏳ A pagar</option><option value="pago">✅ Pago</option></select></div>'+
       '</div>'+
       '<div class="fg"><label>Itens do cartão</label>'+
-      '<div id="f-itens">'+
-        '<div class="cartao-item" style="display:flex;gap:8px;margin-bottom:8px">'+
-          '<input placeholder="Descrição do item" class="f-item-desc" style="flex:2;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:9px 12px;color:var(--text);font-family:inherit;outline:none"/>'+
-          '<input type="number" placeholder="R$" class="f-item-val" min="0" step="0.01" style="flex:1;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:9px 12px;color:var(--text);font-family:inherit;outline:none"/>'+
-          '<button onclick="removeItem(this)" style="background:var(--red-bg);color:var(--red);border:none;border-radius:8px;padding:0 12px;cursor:pointer;font-size:16px">✕</button>'+
-        '</div>'+
+      '<div style="display:grid;grid-template-columns:1fr auto auto auto;gap:6px;margin-bottom:6px;padding:0 2px">'+
+        '<span style="font-size:10px;color:var(--text2);font-weight:600;text-transform:uppercase;padding:0 4px">Descrição</span>'+
+        '<span style="font-size:10px;color:var(--text2);font-weight:600;text-transform:uppercase;text-align:center">Valor R$</span>'+
+        '<span style="font-size:10px;color:var(--text2);font-weight:600;text-transform:uppercase;text-align:center">Parcelas</span>'+
+        '<span></span>'+
       '</div>'+
-      '<button onclick="addItem()" class="btn btn-ghost btn-sm" style="margin-top:4px">+ Adicionar item</button></div>';
+      '<div id="f-itens">'+_itemRowHtml()+
+      '</div>'+
+      '<button onclick="addItem()" class="btn btn-ghost btn-sm" style="margin-top:6px">+ Adicionar item</button></div>';
   }
 
   abreModal('Nova despesa',
@@ -616,11 +617,18 @@ function addData(){
   document.getElementById('f-datas').appendChild(c);
 }
 function removData(btn){ btn.parentElement.remove(); }
+function _itemRowHtml(){
+  return '<div class="cartao-item" style="display:grid;grid-template-columns:1fr 90px 70px 36px;gap:6px;margin-bottom:6px">'+
+    '<input placeholder="Ex: Café, Amazon…" class="f-item-desc" style="background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:9px 12px;color:var(--text);font-family:inherit;outline:none;width:100%"/>'+
+    '<input type="text" inputmode="decimal" placeholder="0,00" class="f-item-val" style="background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:9px 10px;color:var(--text);font-family:inherit;outline:none;width:100%;text-align:right"/>'+
+    '<input type="text" inputmode="numeric" placeholder="1x" class="f-item-parc" value="1" style="background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:9px 8px;color:var(--gold);font-family:inherit;outline:none;width:100%;text-align:center;font-weight:700"/>'+
+    '<button onclick="removeItem(this)" style="background:var(--red-bg);color:var(--red);border:none;border-radius:8px;cursor:pointer;font-size:15px;width:36px">✕</button>'+
+  '</div>';
+}
 function addItem(){
   var c=document.createElement('div');
-  c.className='cartao-item'; c.style.cssText='display:flex;gap:8px;margin-bottom:8px';
-  c.innerHTML='<input placeholder="Descrição do item" class="f-item-desc" style="flex:2;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:9px 12px;color:var(--text);font-family:inherit;outline:none"/><input type="number" placeholder="R$" class="f-item-val" min="0" step="0.01" style="flex:1;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:9px 12px;color:var(--text);font-family:inherit;outline:none"/><button onclick="removeItem(this)" style="background:var(--red-bg);color:var(--red);border:none;border-radius:8px;padding:0 12px;cursor:pointer;font-size:16px">✕</button>';
-  document.getElementById('f-itens').appendChild(c);
+  c.innerHTML=_itemRowHtml();
+  document.getElementById('f-itens').appendChild(c.firstChild);
 }
 function removeItem(btn){ btn.parentElement.remove(); }
 
@@ -721,23 +729,41 @@ async function salvaNovaDesp(tipo){
     } else if(tipo==='cartao'){
       var prefix=document.getElementById('f-desc').value.trim();
       var vn=document.getElementById('f-vn').value;
-      var st=document.getElementById('f-st').value;
+      var stDefault=document.getElementById('f-st').value;
       if(!vn){T('Informe a data de vencimento.','err');L(0);return;}
-      var dt=new Date(vn+'T12:00:00');
-      var mo=dt.getMonth()+1, yr=dt.getFullYear();
       var descs=Array.from(document.querySelectorAll('.f-item-desc')).map(function(i){return i.value.trim();});
-      var vals=Array.from(document.querySelectorAll('.f-item-val')).map(function(i){return parseFloat(i.value);});
+      var vals=Array.from(document.querySelectorAll('.f-item-val')).map(function(i){return parseFloat(i.value.replace(',','.'));});
+      var parcs=Array.from(document.querySelectorAll('.f-item-parc')).map(function(i){return parseInt(i.value)||1;});
       var ins=[];
       for(var i=0;i<descs.length;i++){
         if(!descs[i]||isNaN(vals[i]))continue;
-        ins.push({user_id:CU.id,tipo:'despesa_avulsa',
-          descricao:'💳 '+(prefix?prefix+' — ':'')+descs[i],
-          valor:vals[i],data_vencimento:vn,data_pagamento:null,status:st,mes:mo,ano:yr});
+        var n=parcs[i]||1;
+        var nomeBase='💳 '+(prefix?prefix+' — ':'')+descs[i];
+        if(n<=1){
+          // Item simples — usa a data de vencimento do cartão
+          var dt0=new Date(vn+'T12:00:00');
+          ins.push({user_id:CU.id,tipo:'despesa_avulsa',descricao:nomeBase,
+            valor:vals[i],data_vencimento:vn,data_pagamento:null,status:stDefault,
+            mes:dt0.getMonth()+1,ano:dt0.getFullYear()});
+        } else {
+          // Item parcelado — distribui mensalmente a partir da data do cartão
+          var dt=new Date(vn+'T12:00:00');
+          for(var p=0;p<n;p++){
+            var y=dt.getFullYear(),mo=dt.getMonth()+1,dy=dt.getDate();
+            var ds=y+'-'+String(mo).padStart(2,'0')+'-'+String(dy).padStart(2,'0');
+            ins.push({user_id:CU.id,tipo:'despesa_avulsa',
+              descricao:nomeBase+' ('+(p+1)+'/'+n+')',
+              valor:vals[i],data_vencimento:ds,data_pagamento:null,status:stDefault,
+              mes:mo,ano:y});
+            dt.setMonth(dt.getMonth()+1);
+          }
+        }
       }
       if(!ins.length){T('Adicione ao menos um item.','err');L(0);return;}
       var r=await SB.from('lancamentos').insert(ins);
       if(r.error)throw r.error;
-      T(ins.length+' item(ns) do cartão criado(s)!');
+      var total=ins.length;
+      T(total+' lançamento(s) do cartão criado(s)!');
     }
     kLoad();
   }catch(e){T('Erro: '+e.message,'err');L(0);}
