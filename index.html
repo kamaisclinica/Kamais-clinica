@@ -103,6 +103,9 @@ tr:hover td{background:var(--bg4);}
 .fg input,.fg select,.fg textarea{width:100%;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:10px 13px;color:var(--text);font-size:13.5px;font-family:inherit;outline:none;}
 .fg input:focus,.fg select:focus{border-color:var(--gold);}
 input[type="date"]{color-scheme:dark;}
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;}
+input[type="number"]{-moz-appearance:textfield;}
 .fg select option{background:var(--bg3);}
 .fr{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
 .fa{display:flex;gap:10px;justify-content:flex-end;margin-top:20px;padding-top:16px;border-top:1px solid var(--border);}
@@ -568,16 +571,17 @@ function _tipoDesp(tipo){
       '<div class="fg"><label>Categoria</label><select id="f-cat"><option value="Fixa">Fixa</option><option value="Variável">Variável</option></select></div>';
   } else if(tipo==='parcelada'){
     fields=
-      '<div class="fg"><label>Descrição *</label><input id="f-desc" placeholder="Ex: Seguro sala"/></div>'+
+      '<div class="fg"><label>Descrição *</label><input id="f-desc" placeholder="Ex: Seguro sala, Curso…"/></div>'+
       '<div class="fr">'+
-        '<div class="fg"><label>Valor por parcela (R$) *</label><input id="f-val" type="number" min="0" step="0.01"/></div>'+
-        '<div class="fg"><label>Nº de parcelas *</label><input id="f-parc" type="number" min="2" max="60" value="3"/></div>'+
+        '<div class="fg"><label>Valor por parcela (R$) *</label><input id="f-val" type="text" inputmode="decimal" placeholder="0,00" oninput="prevParcelas()"/></div>'+
+        '<div class="fg"><label>Nº de parcelas *</label><input id="f-parc" type="text" inputmode="numeric" placeholder="Ex: 8" value="3" oninput="prevParcelas()"/></div>'+
       '</div>'+
       '<div class="fr">'+
-        '<div class="fg"><label>1ª parcela — Data venc *</label><input id="f-vn" type="date"/></div>'+
-        '<div class="fg"><label>Intervalo</label><select id="f-int"><option value="mensal">Mensal</option><option value="semanal">Semanal</option></select></div>'+
+        '<div class="fg"><label>1ª parcela — Data venc *</label><input id="f-vn" type="date" oninput="prevParcelas()"/></div>'+
+        '<div class="fg"><label>Intervalo</label><select id="f-int" onchange="prevParcelas()"><option value="mensal">Mensal</option><option value="semanal">Semanal</option></select></div>'+
       '</div>'+
-      '<div class="fg"><label>Status padrão</label><select id="f-st"><option value="a_pagar">⏳ A pagar</option><option value="pago">✅ Pago</option></select></div>';
+      '<div class="fg"><label>Status padrão</label><select id="f-st"><option value="a_pagar">⏳ A pagar</option><option value="pago">✅ Pago</option></select></div>'+
+      '<div id="prev-parcelas" style="margin-top:4px"></div>';
   } else if(tipo==='cartao'){
     fields=
       '<div class="fg"><label>Fatura / descrição do cartão *</label><input id="f-desc" placeholder="Ex: Cartão Nubank"/></div>'+
@@ -619,6 +623,34 @@ function addItem(){
   document.getElementById('f-itens').appendChild(c);
 }
 function removeItem(btn){ btn.parentElement.remove(); }
+
+function prevParcelas(){
+  var desc=document.getElementById('f-desc')?document.getElementById('f-desc').value.trim():'';
+  var val=parseFloat(document.getElementById('f-val')?document.getElementById('f-val').value:'');
+  var n=parseInt(document.getElementById('f-parc')?document.getElementById('f-parc').value:'');
+  var vn=document.getElementById('f-vn')?document.getElementById('f-vn').value:'';
+  var intv=document.getElementById('f-int')?document.getElementById('f-int').value:'mensal';
+  var el=document.getElementById('prev-parcelas');
+  if(!el)return;
+  if(!vn||isNaN(n)||n<1){el.innerHTML='';return;}
+  var rows='';
+  var dt=new Date(vn+'T12:00:00');
+  for(var i=0;i<Math.min(n,24);i++){
+    var y=dt.getFullYear(),mo=dt.getMonth()+1,dy=dt.getDate();
+    var ds=dy+'/'+String(mo).padStart(2,'0')+'/'+y;
+    var vlabel=isNaN(val)?'—':'R$ '+Number(val).toLocaleString('pt-BR',{minimumFractionDigits:2});
+    rows+='<div style="display:flex;justify-content:space-between;padding:7px 12px;border-bottom:1px solid var(--border);font-size:13px">'+
+      '<span style="color:var(--text2)">'+(i+1)+'/'+n+'</span>'+
+      '<span>'+ds+'</span>'+
+      '<span style="color:var(--gold);font-weight:600">'+vlabel+'</span>'+
+      '</div>';
+    if(intv==='semanal'){dt.setDate(dt.getDate()+7);}else{dt.setMonth(dt.getMonth()+1);}
+  }
+  var extra=n>24?'<div style="text-align:center;padding:8px;font-size:12px;color:var(--text2)">… mais '+(n-24)+' parcela(s)</div>':'';
+  el.innerHTML='<div style="background:var(--bg3);border:1px solid var(--border);border-radius:10px;margin-top:4px;overflow:hidden">'+
+    '<div style="padding:8px 12px;font-size:10.5px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.07em;border-bottom:1px solid var(--border)">Preview das parcelas</div>'+
+    rows+extra+'</div>';
+}
 
 async function salvaNovaDesp(tipo){
   L(1);fechaModal();
@@ -666,7 +698,7 @@ async function salvaNovaDesp(tipo){
 
     } else if(tipo==='parcelada'){
       var desc=document.getElementById('f-desc').value.trim();
-      var val=parseFloat(document.getElementById('f-val').value);
+      var val=parseFloat(document.getElementById('f-val').value.replace(',','.'));
       var n=parseInt(document.getElementById('f-parc').value);
       var vn=document.getElementById('f-vn').value;
       var intv=document.getElementById('f-int').value;
