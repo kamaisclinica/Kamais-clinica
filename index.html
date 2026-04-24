@@ -768,16 +768,21 @@ async function salvaNovaDesp(tipo){
       if(!descs.filter(Boolean).length){T('Adicione ao menos um item.','err');L(0);return;}
       // Cria fatura principal deste mês
       var fatId=await findOrCreateFatura(cardName,fMes,fAno,vn,stDef);
+      // Acumula totais por fatura em JS (mais confiável que re-query)
+      var fatTotals={};
+      fatTotals[fatId]=0;
       for(var i=0;i<descs.length;i++){
         if(!descs[i]||!vals[i])continue;
         var n=parcs[i]||1,nomeBase=descs[i];
         if(n<=1){
+          // Item simples — vai para fatura do mês atual
           var ri=await SB.from('lancamentos').insert({user_id:CU.id,tipo:'cartao_item',descricao:nomeBase,
             valor:vals[i],data_vencimento:vn,data_pagamento:null,status:'a_pagar',
             mes:fMes,ano:fAno,parent_id:fatId});
           if(ri.error)throw ri.error;
+          fatTotals[fatId]=(fatTotals[fatId]||0)+vals[i];
         } else {
-          // Parcelado: distribui por N meses, cada um na fatura do seu mês
+          // Parcelado: distribui por N meses, cada parcela na fatura do mês correto
           var dtP=new Date(vn+'T12:00:00');
           for(var p=0;p<n;p++){
             var yP=dtP.getFullYear(),moP=dtP.getMonth()+1,dyP=dtP.getDate();
@@ -787,13 +792,16 @@ async function salvaNovaDesp(tipo){
               descricao:nomeBase+' ('+(p+1)+'/'+n+')',valor:vals[i],
               data_vencimento:dsP,data_pagamento:null,status:'a_pagar',mes:moP,ano:yP,parent_id:fIdP});
             if(rp.error)throw rp.error;
-            await updateFaturaTotal(fIdP);
+            fatTotals[fIdP]=(fatTotals[fIdP]||0)+vals[i];
             dtP.setMonth(dtP.getMonth()+1);
           }
-          continue;
         }
       }
-      await updateFaturaTotal(fatId);
+      // Atualiza total de cada fatura diretamente (sem re-query, calcula em JS)
+      for(var fid in fatTotals){
+        var rt=await SB.from('lancamentos').update({valor:Math.round(fatTotals[fid]*100)/100}).eq('id',fid).eq('user_id',CU.id);
+        if(rt.error)throw rt.error;
+      }
       T('Fatura '+cardName+' criada!');
     }
     kLoad();
