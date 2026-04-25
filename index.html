@@ -226,6 +226,7 @@ input[type="number"]{-moz-appearance:textfield;}
 <div id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <script>
 var SB = supabase.createClient(
   'https://pvdkjditnogatdontnns.supabase.co',
@@ -864,7 +865,9 @@ async function salvaEdit(id){
 var FM=new Date().getMonth()+1, FA=new Date().getFullYear(), FL=[], FLoc=0;
 async function pgFin(){
   document.getElementById('tb-acts').innerHTML=
-    '<div class="mn"><button class="mn-btn" id="f-ant">◀</button><span class="mn-lbl" id="f-lbl"></span><button class="mn-btn" id="f-prox">▶</button></div>';
+    '<div class="mn"><button class="mn-btn" id="f-ant">◀</button><span class="mn-lbl" id="f-lbl"></span><button class="mn-btn" id="f-prox">▶</button></div>'+
+    '<button class="btn btn-ghost btn-sm" onclick="exportarPDF()" title="Exportar PDF para contador">📄 PDF</button>'+
+    '<button class="btn btn-ghost btn-sm" onclick="fazerBackup()" title="Baixar backup completo">💾 Backup</button>';
   document.getElementById('pg-body').innerHTML=
     '<div class="g4">'+
     '<div class="card"><div class="stat-ico">💸</div><div class="stat-v" id="fc-b">—</div><div class="stat-l">Total Bruto</div></div>'+
@@ -1077,6 +1080,169 @@ async function dVer(path){L(1);try{var u=await signed('documentos',path);L(0);wi
 async function dDel(id,path,s){
   if(!await confirma('Excluir este documento?'))return;
   L(1);await SB.storage.from('documentos').remove([path]);await SB.from('documentos').delete().eq('id',id);L(0);T('Excluído.');dLoad(s);
+}
+
+// ============ BACKUP ============
+async function fazerBackup(){
+  L(1);
+  try{
+    var data={
+      exportado_em: new Date().toISOString(),
+      clinica: 'KAMAIS Clínica',
+      dados:{}
+    };
+    var tabelas=['lancamentos','contas_fixas','receita_locacao','comprovantes','documentos'];
+    for(var i=0;i<tabelas.length;i++){
+      var t=tabelas[i];
+      var r=await SB.from(t).select('*').eq('user_id',CU.id);
+      data.dados[t]=r.data||[];
+    }
+    var json=JSON.stringify(data, null, 2);
+    var blob=new Blob([json],{type:'application/json'});
+    var url=URL.createObjectURL(blob);
+    var a=document.createElement('a');
+    var dt=new Date();
+    var nome='KAMAIS_Backup_'+dt.getFullYear()+'_'+String(dt.getMonth()+1).padStart(2,'0')+'_'+String(dt.getDate()).padStart(2,'0')+'.json';
+    a.href=url; a.download=nome; a.click();
+    URL.revokeObjectURL(url);
+    T('Backup baixado: '+nome,'ok');
+  }catch(e){T('Erro no backup: '+e.message,'err');}
+  finally{L(0);}
+}
+
+// ============ EXPORTAR PDF ============
+async function exportarPDF(){
+  L(1);
+  try{
+    // Busca dados do mês selecionado
+    var r=await SB.from('lancamentos').select('*').eq('user_id',CU.id).eq('mes',FM).eq('ano',FA)
+      .order('data_vencimento',{ascending:true,nullsFirst:false});
+    var lancamentos=r.data||[];
+    var locacao=await getLoc(FM,FA);
+
+    // Filtra itens de cartão (só descritivos, não entram no total)
+    var linhas=lancamentos.filter(function(l){return l.tipo!=='cartao_item';});
+
+    // Cálculo 50/50
+    var bruto=linhas.reduce(function(s,l){return s+Number(l.valor);},0);
+    var pago=linhas.filter(function(l){return l.status==='pago';}).reduce(function(s,l){return s+Number(l.valor);},0);
+    var apagar=linhas.filter(function(l){return l.status==='a_pagar';}).reduce(function(s,l){return s+Number(l.valor);},0);
+    var liq=bruto-locacao;
+    var liqC=Math.round(liq*100), maiC=Math.floor(liqC/2), kamC=liqC-maiC;
+
+    var {jsPDF}=window.jspdf;
+    var doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
+    var W=210, mg=15, y=mg, lh=7;
+
+    function linha(){ doc.setDrawColor(220,220,220); doc.line(mg,y,W-mg,y); y+=4; }
+    function titulo(txt,sz,bold){
+      doc.setFontSize(sz||11);
+      doc.setFont('helvetica', bold?'bold':'normal');
+      doc.text(txt, mg, y); y+=lh;
+    }
+    function par(lbl,val,cor){
+      doc.setFontSize(9); doc.setFont('helvetica','normal');
+      doc.setTextColor(80,80,80); doc.text(lbl, mg, y);
+      doc.setFont('helvetica','bold');
+      if(cor==='green') doc.setTextColor(22,163,74);
+      else if(cor==='red') doc.setTextColor(220,50,50);
+      else if(cor==='gold') doc.setTextColor(180,130,30);
+      else doc.setTextColor(30,30,30);
+      doc.text(val, W-mg, y, {align:'right'});
+      doc.setTextColor(30,30,30);
+      y+=lh;
+    }
+
+    // ── CABEÇALHO ──
+    doc.setFillColor(19,36,61);
+    doc.rect(0,0,W,28,'F');
+    doc.setTextColor(201,168,76);
+    doc.setFontSize(18); doc.setFont('helvetica','bold');
+    doc.text('KAMAIS Clínica', mg, 12);
+    doc.setFontSize(10); doc.setFont('helvetica','normal');
+    doc.setTextColor(180,190,210);
+    doc.text('Relatório Financeiro Mensal — '+NM(FM,FA), mg, 20);
+    doc.setTextColor(120,130,150);
+    doc.text('Gerado em '+new Date().toLocaleDateString('pt-BR')+' às '+new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}), W-mg, 20, {align:'right'});
+    doc.setTextColor(30,30,30);
+    y=36;
+
+    // ── RESUMO ──
+    doc.setFillColor(248,248,248);
+    doc.roundedRect(mg,y,W-2*mg,44,2,2,'F');
+    y+=6;
+    doc.setFontSize(10); doc.setFont('helvetica','bold'); doc.setTextColor(50,50,50);
+    doc.text('RESUMO DO MÊS', mg+4, y); y+=7;
+    doc.setFont('helvetica','normal');
+    par('  Total Bruto Despesas', BRL(bruto));
+    par('  (-) Receita de Locação', BRL(locacao), 'green');
+    doc.setFontSize(10); doc.setFont('helvetica','bold');
+    par('  Total Líquido Despesas', BRL(liq));
+    doc.setFont('helvetica','normal'); doc.setFontSize(9);
+    par('  🧑‍⚕️ Maisa (50%)', BRL(maiC/100), 'gold');
+    par('  🧑‍⚕️ Kamylla (50%)', BRL(kamC/100), 'gold');
+    y+=4;
+
+    // ── LANÇAMENTOS ──
+    doc.setFontSize(10); doc.setFont('helvetica','bold'); doc.setTextColor(50,50,50);
+    doc.text('LANÇAMENTOS', mg, y); y+=3; linha();
+
+    // Header tabela
+    doc.setFillColor(230,230,235);
+    doc.rect(mg,y,W-2*mg,6,'F');
+    doc.setFontSize(7.5); doc.setFont('helvetica','bold'); doc.setTextColor(80,80,80);
+    doc.text('DATA PGTO',   mg+1, y+4.5);
+    doc.text('DATA VENC',   mg+25, y+4.5);
+    doc.text('DESCRIÇÃO',   mg+50, y+4.5);
+    doc.text('VALOR',       mg+130, y+4.5);
+    doc.text('STATUS',      mg+155, y+4.5);
+    y+=7;
+
+    linhas.forEach(function(l,idx){
+      if(y>265){doc.addPage();y=15;}
+      var bg=idx%2===0?[255,255,255]:[248,249,252];
+      doc.setFillColor(bg[0],bg[1],bg[2]);
+      doc.rect(mg,y-1,W-2*mg,6.5,'F');
+      doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(50,50,50);
+      doc.text(l.data_pagamento?DT(l.data_pagamento):'—', mg+1, y+4);
+      doc.text(l.data_vencimento?DT(l.data_vencimento):'—', mg+25, y+4);
+      var desc=(l.descricao||'').substring(0,38)+(l.tipo==='cartao_fatura'?' [Cartão]':l.tipo==='conta_fixa'?' [Rec.]':'');
+      doc.text(desc, mg+50, y+4);
+      // Valor em dourado
+      doc.setTextColor(160,115,20); doc.setFont('helvetica','bold');
+      doc.text(BRL(l.valor), mg+130, y+4);
+      // Status colorido
+      if(l.status==='pago'){doc.setTextColor(22,163,74);}
+      else{doc.setTextColor(180,80,20);}
+      doc.setFont('helvetica','normal');
+      doc.text(l.status==='pago'?'Pago':'A pagar', mg+155, y+4);
+      doc.setTextColor(50,50,50);
+      // Items do cartão se houver
+      var fatItens=lancamentos.filter(function(it){return it.tipo==='cartao_item'&&it.parent_id===l.id;});
+      y+=6.5;
+      fatItens.forEach(function(it){
+        if(y>265){doc.addPage();y=15;}
+        doc.setFontSize(6.5); doc.setFont('helvetica','normal'); doc.setTextColor(120,120,130);
+        doc.text('  └ '+( it.descricao||'').substring(0,45), mg+50, y+3.5);
+        doc.text(BRL(it.valor), mg+130, y+3.5);
+        y+=5;
+      });
+    });
+
+    // ── RODAPÉ ──
+    if(y>260) doc.addPage();
+    y+=8;
+    doc.setDrawColor(200,200,200); doc.line(mg,y,W-mg,y); y+=5;
+    doc.setFontSize(8); doc.setFont('helvetica','normal'); doc.setTextColor(140,140,140);
+    doc.text('KAMAIS Clínica — Sistema de Gestão Financeira', mg, y);
+    doc.text('Pág. 1', W-mg, y, {align:'right'});
+
+    // Salva PDF
+    var nome='KAMAIS_'+NM(FM,FA).replace(' ','_')+'_Relatorio.pdf';
+    doc.save(nome);
+    T('PDF gerado: '+nome,'ok');
+  }catch(e){T('Erro ao gerar PDF: '+e.message,'err');console.error(e);}
+  finally{L(0);}
 }
 </script>
 </body>
