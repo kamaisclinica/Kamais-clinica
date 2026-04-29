@@ -16,11 +16,21 @@
   --bg:#0f1117;--bg2:#1a1d27;--bg3:#13151f;--bg4:#22263a;
   --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.12);
   --text:#e8eaf0;--text2:#8b8fa8;--text3:#555873;
-  --gold:#c9a84c;--gold2:#e2c070;
+  --gold:#c9a84c;--gold2:#e2c070;--gold-bg:rgba(201,168,76,0.15);
   --green:#22c55e;--green-bg:rgba(34,197,94,0.12);
   --amber:#f59e0b;--amber-bg:rgba(245,158,11,0.12);
   --red:#ef4444;--red-bg:rgba(239,68,68,0.12);
   --active-bg:#1e3a2f;--active:#4ade80;
+}
+body.light{
+  --bg:#f0f2f8;--bg2:#ffffff;--bg3:#e8eaf2;--bg4:#dde0ee;
+  --border:rgba(0,0,0,0.08);--border2:rgba(0,0,0,0.14);
+  --text:#1a1d2e;--text2:#5a5f7a;--text3:#9ba0ba;
+  --gold:#b8922e;--gold2:#c9a84c;--gold-bg:rgba(184,146,46,0.12);
+  --green:#16a34a;--green-bg:rgba(22,163,74,0.1);
+  --amber:#d97706;--amber-bg:rgba(217,119,6,0.1);
+  --red:#dc2626;--red-bg:rgba(220,38,38,0.1);
+  --active-bg:#dcfce7;--active:#16a34a;
 }
 *{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;font-size:14px;}
@@ -200,7 +210,16 @@ input[type="number"]{-moz-appearance:textfield;}
       <button class="nav-btn" data-p="comprovantes"><span class="nav-ico">📎</span>Comprovantes</button>
       <button class="nav-btn" data-p="documentos"><span class="nav-ico">📁</span>Documentos</button>
     </nav>
-    <div class="sb-foot"><button class="btn-sair" onclick="fazerLogout()">🚪 Sair</button></div>
+    <div class="sb-foot">
+      <button onclick="toggleTema()" id="btn-tema" style="display:flex;align-items:center;gap:10px;width:100%;padding:10px 13px;border-radius:10px;background:transparent;color:var(--text2);font-size:13.5px;font-weight:500;transition:background .15s;border:none;cursor:pointer;font-family:inherit;margin-bottom:4px">
+        <span id="tema-ico" style="font-size:17px;width:20px;text-align:center">🌙</span>
+        <span id="tema-txt">Modo escuro</span>
+        <span id="tema-pill" style="margin-left:auto;width:36px;height:20px;border-radius:10px;background:var(--bg4);border:1px solid var(--border2);position:relative;transition:background .2s;flex-shrink:0">
+          <span id="tema-dot" style="position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:var(--text2);transition:all .2s"></span>
+        </span>
+      </button>
+      <button class="btn-sair" onclick="fazerLogout()">🚪 Sair</button>
+    </div>
   </aside>
   <div class="main">
     <div class="topbar">
@@ -309,6 +328,36 @@ async function fazerLogout(){
 }
 
 // ---- STARTUP ----
+function toggleTema(){
+  var isLight=document.body.classList.toggle('light');
+  localStorage.setItem('tema', isLight?'light':'dark');
+  atualizaBtnTema(isLight);
+}
+function atualizaBtnTema(isLight){
+  var ico=document.getElementById('tema-ico');
+  var txt=document.getElementById('tema-txt');
+  var pill=document.getElementById('tema-pill');
+  var dot=document.getElementById('tema-dot');
+  if(!ico)return;
+  if(isLight){
+    ico.textContent='☀️';
+    txt.textContent='Modo claro';
+    if(pill) pill.style.background='var(--gold)';
+    if(dot){dot.style.left='18px';dot.style.background='#fff';}
+  } else {
+    ico.textContent='🌙';
+    txt.textContent='Modo escuro';
+    if(pill) pill.style.background='var(--bg4)';
+    if(dot){dot.style.left='2px';dot.style.background='var(--text2)';}
+  }
+}
+function carregaTema(){
+  var tema=localStorage.getItem('tema')||'dark';
+  if(tema==='light'){document.body.classList.add('light');}
+  atualizaBtnTema(tema==='light');
+}
+carregaTema();
+
 async function iniciaApp(){
   var s=await SB.auth.getSession();
   if(!s.data.session) return;
