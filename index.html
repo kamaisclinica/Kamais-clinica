@@ -229,6 +229,7 @@ input[type="number"]{-moz-appearance:textfield;}
       <div style="display:flex;align-items:center;gap:10px">
         <button class="ham" onclick="toggleSb()">☰</button>
         <h1 class="pg-title" id="pg-title">Dashboard</h1>
+        <span style="font-size:10px;color:var(--text3);font-weight:500;opacity:.6">v2.2</span>
       </div>
       <div class="tb-acts" id="tb-acts"></div>
     </div>
@@ -1079,26 +1080,108 @@ async function salvaNovaDesp(tipo){
           }
         }
       }
-      // Atualiza total de cada fatura diretamente (sem re-query, calcula em JS)
+      // Recalcula total de cada fatura consultando TODOS os itens (inclui itens anteriores)
       for(var fid in fatTotals){
-        var rt=await SB.from('lancamentos').update({valor:Math.round(fatTotals[fid]*100)/100}).eq('id',fid).eq('user_id',CU.id);
+        var itR=await SB.from('lancamentos').select('valor').eq('parent_id',fid).eq('user_id',CU.id);
+        var newTotal=(itR.data||[]).reduce(function(s,it){return s+Number(it.valor);},0);
+        var rt=await SB.from('lancamentos').update({valor:Math.round(newTotal*100)/100}).eq('id',fid).eq('user_id',CU.id);
         if(rt.error)throw rt.error;
       }
-      T('Fatura '+cardName+' criada!');
+      T('Fatura '+cardName+' atualizada!');
     }
     kLoad();
   }catch(e){T('Erro: '+e.message,'err');L(0);}
   finally{_salvando=false;}
 }
 
+async function recalcFatura(fatId){
+  L(1);fechaModal();
+  try{
+    var itR=await SB.from('lancamentos').select('valor').eq('parent_id',fatId).eq('user_id',CU.id);
+    var newTotal=(itR.data||[]).reduce(function(s,it){return s+Number(it.valor);},0);
+    await SB.from('lancamentos').update({valor:Math.round(newTotal*100)/100}).eq('id',fatId).eq('user_id',CU.id);
+    T('Total recalculado: '+BRL(newTotal));kLoad();
+  }catch(e){T('Erro: '+e.message,'err');}finally{L(0);}
+}
+var _fatCtx={};
 function editaFatura(id){
   var fat=KL.find(function(x){return x.id===id;});if(!fat)return;
+  _fatCtx={id:id,venc:fat.data_vencimento||'',nome:fat.descricao};
+  var fatItens=KL.filter(function(it){return it.tipo==='cartao_item'&&it.parent_id===id;}).sort(function(a,b){return (a.descricao||'').localeCompare(b.descricao||'');});
+  var itensHtml='';
+  if(fatItens.length){
+    itensHtml='<div style="margin:14px 0 6px;font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.06em">Itens da fatura</div>'+
+      fatItens.map(function(it){
+        return '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;background:var(--bg3);border-radius:6px;margin-bottom:3px;font-size:13px">'+
+          '<span style="color:var(--text1)">'+getIco(it.descricao)+' '+escHtml(it.descricao)+'</span>'+
+          '<span style="color:var(--gold);font-weight:600">'+BRL(it.valor)+'</span></div>';
+      }).join('');
+  }
   abreModal('Editar fatura — '+fat.descricao,
     '<div class="fg"><label>Data de vencimento</label><input id="el-vn" type="date" value="'+(fat.data_vencimento||'')+'"/></div>'+
     '<div class="fr"><div class="fg"><label>Data de pagamento</label><input id="el-pg" type="date" value="'+(fat.data_pagamento||'')+'"/></div>'+
     '<div class="fg"><label>Status</label><select id="el-s"><option value="a_pagar" '+(fat.status==='a_pagar'?'selected':'')+'>⏳ A pagar</option><option value="pago" '+(fat.status==='pago'?'selected':'')+'>✅ Pago</option></select></div></div>'+
-    '<div class="fa"><button class="btn btn-ghost btn-sm" onclick="fechaModal()">Cancelar</button>'+
+    itensHtml+
+    '<button onclick="abreAddItemFatura()" class="btn btn-ghost btn-sm" style="width:100%;margin:10px 0 4px">+ Adicionar item</button>'+
+    '<div class="fa" style="margin-top:6px">'+
+    '<button class="btn btn-ghost btn-sm" onclick="fechaModal()">Cancelar</button>'+
+    '<button class="btn btn-ghost btn-sm" onclick="recalcFatura(\''+id+'\')" title="Recalcula o total somando todos os itens">🔄 Recalcular</button>'+
     '<button class="btn btn-gold btn-sm" onclick="salvaEditFatura(\''+id+'\')">Salvar</button></div>');
+}
+function abreAddItemFatura(){
+  fechaModal();
+  setTimeout(function(){
+    abreModal('Adicionar item — '+_fatCtx.nome,
+      '<div class="fg"><label>Descrição *</label><input id="ai-d" placeholder="Ex: Mercado, Netflix…" autocomplete="off"/></div>'+
+      '<div class="fr">'+
+      '<div class="fg"><label>Valor (R$) *</label><input id="ai-v" type="text" inputmode="decimal" placeholder="0,00"/></div>'+
+      '<div class="fg" style="max-width:90px"><label>Parcelas</label><input id="ai-p" type="number" min="1" max="48" value="1"/></div>'+
+      '</div>'+
+      '<div class="fa">'+
+      '<button class="btn btn-ghost btn-sm" onclick="fechaModal()">Cancelar</button>'+
+      '<button class="btn btn-gold btn-sm" onclick="salvaAddItemFatura()">Adicionar</button>'+
+      '</div>');
+    setTimeout(function(){var el=document.getElementById('ai-d');if(el)el.focus();},50);
+  },150);
+}
+async function salvaAddItemFatura(){
+  var desc=(document.getElementById('ai-d').value||'').trim();
+  var val=parseVal(document.getElementById('ai-v').value);
+  var n=parseInt(document.getElementById('ai-p').value)||1;
+  if(!desc||isNaN(val)||val<=0){T('Preencha descrição e valor.','err');return;}
+  var fatId=_fatCtx.id,dataVenc=_fatCtx.venc,cardName=_fatCtx.nome;
+  L(1);fechaModal();
+  try{
+    var fatTotals={};
+    if(n<=1){
+      var dt0=new Date(dataVenc+'T12:00:00');
+      var fMes=dt0.getMonth()+1,fAno=dt0.getFullYear();
+      var ri=await SB.from('lancamentos').insert({user_id:CU.id,tipo:'cartao_item',descricao:desc,
+        valor:val,data_vencimento:dataVenc,data_pagamento:null,status:'a_pagar',
+        mes:fMes,ano:fAno,parent_id:fatId});
+      if(ri.error)throw ri.error;
+      fatTotals[fatId]=1;
+    } else {
+      var dt=new Date(dataVenc+'T12:00:00');
+      for(var p=0;p<n;p++){
+        var y=dt.getFullYear(),mo=dt.getMonth()+1,dy=dt.getDate();
+        var ds=y+'-'+String(mo).padStart(2,'0')+'-'+String(dy).padStart(2,'0');
+        var fIdP=await findOrCreateFatura(cardName,mo,y,ds,'a_pagar');
+        var rp=await SB.from('lancamentos').insert({user_id:CU.id,tipo:'cartao_item',
+          descricao:desc+' ('+(p+1)+'/'+n+')',valor:val,
+          data_vencimento:ds,data_pagamento:null,status:'a_pagar',mes:mo,ano:y,parent_id:fIdP});
+        if(rp.error)throw rp.error;
+        fatTotals[fIdP]=1;
+        dt.setMonth(dt.getMonth()+1);
+      }
+    }
+    for(var fid in fatTotals){
+      var itR=await SB.from('lancamentos').select('valor').eq('parent_id',fid).eq('user_id',CU.id);
+      var newTotal=(itR.data||[]).reduce(function(s,it){return s+Number(it.valor);},0);
+      await SB.from('lancamentos').update({valor:Math.round(newTotal*100)/100}).eq('id',fid).eq('user_id',CU.id);
+    }
+    T('Item adicionado!');kLoad();
+  }catch(e){T('Erro: '+e.message,'err');}finally{L(0);}
 }
 async function salvaEditFatura(id){
   var vn=document.getElementById('el-vn').value,pg=document.getElementById('el-pg').value,st=document.getElementById('el-s').value;
@@ -1106,6 +1189,11 @@ async function salvaEditFatura(id){
   try{
     var r=await SB.from('lancamentos').update({data_vencimento:vn||null,data_pagamento:pg||null,status:st}).eq('id',id).eq('user_id',CU.id);
     if(r.error)throw r.error;
+    var itR=await SB.from('lancamentos').select('valor').eq('parent_id',id).eq('user_id',CU.id);
+    if((itR.data||[]).length>0){
+      var newTotal=(itR.data).reduce(function(s,it){return s+Number(it.valor);},0);
+      await SB.from('lancamentos').update({valor:Math.round(newTotal*100)/100}).eq('id',id).eq('user_id',CU.id);
+    }
     T('Fatura atualizada!');kLoad();
   }catch(e){T('Erro: '+e.message,'err');}finally{L(0);}
 }
@@ -1314,7 +1402,9 @@ async function cpvUp(){
   L(1);fechaModal();
   try{
     var YYYYMM=String(CA)+String(CM).padStart(2,'0');
-    var path=isLivre?CU.id+'/livre/'+YYYYMM+'/'+tipo+'/'+Date.now()+'_'+file.name:CU.id+'/'+lancId+'/'+Date.now()+'_'+file.name;
+    var ext=(file.name.split('.').pop()||'bin').toLowerCase().replace(/[^a-z0-9]/g,'');
+    var ts=Date.now();
+    var path=isLivre?CU.id+'/livre/'+YYYYMM+'/'+tipo+'/'+ts+'.'+ext:CU.id+'/'+lancId+'/'+ts+'.'+ext;
     var ru=await SB.storage.from('comprovantes').upload(path,file);if(ru.error)throw ru.error;
     var ins={user_id:CU.id,arquivo_path:path,arquivo_nome:file.name};
     if(!isLivre)ins.lancamento_id=lancId;
@@ -1368,7 +1458,8 @@ async function docUp(s){
   if(f.size>20*1024*1024){T('Arquivo muito grande.','err');return;}
   L(1);fechaModal();
   try{
-    var path=CU.id+'/'+s+'/'+Date.now()+'_'+f.name;
+    var ext=(f.name.split('.').pop()||'bin').toLowerCase().replace(/[^a-z0-9]/g,'');
+    var path=CU.id+'/'+s+'/'+Date.now()+'.'+ext;
     var ru=await SB.storage.from('documentos').upload(path,f);if(ru.error)throw ru.error;
     var rd=await SB.from('documentos').insert({user_id:CU.id,socia:s,nome:n,arquivo_path:path});if(rd.error)throw rd.error;
     T('Enviado!');dLoad(s);
