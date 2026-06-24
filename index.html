@@ -229,7 +229,7 @@ input[type="number"]{-moz-appearance:textfield;}
       <div style="display:flex;align-items:center;gap:10px">
         <button class="ham" onclick="toggleSb()">☰</button>
         <h1 class="pg-title" id="pg-title">Dashboard</h1>
-        <span style="font-size:10px;color:var(--text3);font-weight:500;opacity:.6">v2.3</span>
+        <span style="font-size:10px;color:var(--text3);font-weight:500;opacity:.6">v2.4</span>
       </div>
       <div class="tb-acts" id="tb-acts"></div>
     </div>
@@ -251,6 +251,7 @@ input[type="number"]{-moz-appearance:textfield;}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <script>
+(function(){var V='2.4';if(localStorage.getItem('kv')!==V){localStorage.setItem('kv',V);var u=location.href.split('?')[0]+'?v='+V;location.replace(u);}})();
 var SB = supabase.createClient(
   'https://pvdkjditnogatdontnns.supabase.co',
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB2ZGtqZGl0bm9nYXRkb250bm5zIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY5NjM2NjAsImV4cCI6MjA5MjUzOTY2MH0.wLtEiTw5PC_DdmUpcd_uqlwq0ea2rPrNRR3VKM2Rlfg'
@@ -518,7 +519,6 @@ async function kLoad(){
   var lbl=document.getElementById('k-lbl'); if(lbl) lbl.textContent=NM(KM,KA);
   L(1);
   try{
-    await geraRec(KM,KA);
     var ld=await SB.from('lancamentos').select('*').eq('user_id',CU.id).eq('mes',KM).eq('ano',KA).order('data_vencimento',{ascending:true,nullsFirst:false});
     KL=ld.data||[];
     // Load items of faturas in this month
@@ -534,28 +534,37 @@ async function kLoad(){
   }catch(e){T('Erro: '+e.message,'err');}finally{L(0);}
 }
 
-async function geraRec(m,a){
-  if(_ger)return; _ger=true;
+
+async function limpaDuplicatasRec(){
   try{
-    var rf=await SB.from('contas_fixas').select('*').eq('user_id',CU.id).eq('ativa',true);
-    if(!rf.data||!rf.data.length)return;
-    var re=await SB.from('lancamentos').select('conta_fixa_id').eq('user_id',CU.id).eq('mes',m).eq('ano',a).eq('tipo','conta_fixa');
-    var ids=new Set((re.data||[]).map(function(l){return l.conta_fixa_id;}));
-    var novas=rf.data.filter(function(f){return !ids.has(f.id);});
-    if(!novas.length)return;
-    var ins=novas.map(function(f){
-      var dm=new Date(a,m,0).getDate(),dr=Math.min(f.dia_vencimento,dm);
-      return{user_id:CU.id,tipo:'conta_fixa',descricao:f.nome,valor:f.valor_padrao,
-        data_vencimento:a+'-'+String(m).padStart(2,'0')+'-'+String(dr).padStart(2,'0'),
-        data_pagamento:null,status:'a_pagar',mes:m,ano:a,conta_fixa_id:f.id};
+    var r=await SB.from('lancamentos').select('id,conta_fixa_id,mes,ano,status').eq('user_id',CU.id).eq('tipo','conta_fixa');
+    if(!r.data||!r.data.length)return;
+    var grupos={};
+    r.data.forEach(function(l){
+      var k=l.conta_fixa_id+'-'+l.mes+'-'+l.ano;
+      if(!grupos[k])grupos[k]=[];
+      grupos[k].push(l);
     });
-    await SB.from('lancamentos').insert(ins);
-  }finally{_ger=false;}
+    var del=[];
+    Object.keys(grupos).forEach(function(k){
+      var g=grupos[k];
+      if(g.length<=1)return;
+      g.sort(function(a,b){return (b.status==='pago'?1:0)-(a.status==='pago'?1:0);});
+      for(var i=1;i<g.length;i++)del.push(g[i].id);
+    });
+    if(!del.length)return;
+    for(var i=0;i<del.length;i+=100){
+      var rd=await SB.from('lancamentos').delete().in('id',del.slice(i,i+100)).eq('user_id',CU.id);
+      if(rd.error)throw rd.error;
+    }
+    console.log('Removidas '+del.length+' duplicata(s) de contas recorrentes.');
+  }catch(e){console.error('limpaDuplicatasRec:',e);}
 }
 
 async function geraRecFuturos(){
-  // Gera lançamentos recorrentes para todos os meses do ano atual + próximo ano
+  if(_ger)return; _ger=true;
   try{
+    await limpaDuplicatasRec();
     var rf=await SB.from('contas_fixas').select('*').eq('user_id',CU.id).eq('ativa',true);
     if(!rf.data||!rf.data.length)return;
     var now=new Date(),cm=now.getMonth()+1,ca=now.getFullYear(),endA=ca+1;
@@ -581,6 +590,7 @@ async function geraRecFuturos(){
       if(r.error)throw r.error;
     }
   }catch(e){console.error('geraRecFuturos:',e);}
+  finally{_ger=false;}
 }
 
 function kTabela(){
@@ -729,7 +739,9 @@ async function _kDelRec(id,futuros,cfId,mes,ano){
     try{
       var r=await SB.from('lancamentos').delete().eq('id',id).eq('user_id',CU.id);
       if(r.error)throw r.error;
-      T('Excluído.');kLoad();
+      T('Excluído.');
+      KL=KL.filter(function(x){return x.id!==id;});
+      kTabela();
     }catch(e){T('Erro: '+e.message,'err');}finally{L(0);}
   } else {
     if(!await confirma('Excluir este e todos os meses futuros? A conta recorrente será desativada.'))return;
@@ -1083,11 +1095,12 @@ async function salvaNovaDesp(tipo){
       var val=parseVal(document.getElementById('f-val').value);
       var cat=document.getElementById('f-cat').value;
       if(!nome||!dv||isNaN(val)){T('Preencha todos os campos.','err');L(0);return;}
+      var chk=await SB.from('contas_fixas').select('id').eq('user_id',CU.id).eq('nome',nome).eq('ativa',true);
+      if(chk.data&&chk.data.length){T('Já existe uma conta recorrente com este nome.','err');L(0);return;}
       var dia=parseInt(dv.split('-')[2]);
       var r=await SB.from('contas_fixas').insert({user_id:CU.id,nome:nome,dia_vencimento:dia,valor_padrao:val,categoria:cat,ativa:true});
       if(r.error)throw r.error;
-      _ger=false;
-      geraRecFuturos(); // Gera entradas para todos os meses futuros em background
+      await geraRecFuturos(); // Aguarda para evitar duplicatas com geraRec() no kLoad()
       T('Conta recorrente criada!');
 
     } else if(tipo==='parcelada'){
