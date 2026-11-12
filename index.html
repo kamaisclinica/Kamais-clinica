@@ -301,8 +301,9 @@ function confirma(msg){
     d.querySelector('#cn').onclick=function(){ d.remove(); res(false); };
   });
 }
-async function getLoc(m,a){
+async function getLoc(m,a,exigirSucesso){
   var r=await SB.from('receita_locacao').select('valor').eq('user_id',CU.id).eq('mes',m).eq('ano',a).maybeSingle();
+  if(exigirSucesso&&r.error) throw r.error;
   return Number(r.data&&r.data.valor||0);
 }
 async function saveLoc(m,a,v){
@@ -1308,7 +1309,7 @@ var FM=new Date().getMonth()+1, FA=new Date().getFullYear(), FL=[], FLoc=0;
 async function pgFin(){
   document.getElementById('tb-acts').innerHTML=
     '<div class="mn"><button class="mn-btn" id="f-ant">◀</button><span class="mn-lbl" id="f-lbl"></span><button class="mn-btn" id="f-prox">▶</button></div>'+
-    '<button class="btn btn-ghost btn-sm" onclick="exportarPDF()" title="Exportar PDF para contador">📄 PDF</button>'+
+    '<button class="btn btn-ghost btn-sm" onclick="exportarPDF()" title="Baixar relatório do mês para a contabilidade">📄 Baixar PDF do mês</button>'+
     '<button class="btn btn-ghost btn-sm" onclick="fazerBackup()" title="Baixar backup completo">💾 Backup</button>';
   document.getElementById('pg-body').innerHTML=
     '<div class="g4">'+
@@ -1581,136 +1582,188 @@ async function fazerBackup(){
 }
 
 // ============ EXPORTAR PDF ============
+function textoDoRelatorio(valor){
+  // Helvetica do PDF usa WinAnsi. Preserve os acentos e normalize símbolos de texto.
+  return String(valor||'').normalize('NFC')
+    .replace(/[\u2010-\u2015\u2212]/g,'-')
+    .replace(/[\u2018\u2019]/g,"'")
+    .replace(/[\u201c\u201d]/g,'"')
+    .replace(/\u2026/g,'...')
+    .replace(/[\u2022\u2514]/g,'-')
+    .replace(/[^\x20-\x7e\xa0-\xff\s]/gu,function(c){
+      return /[\p{Extended_Pictographic}\p{Regional_Indicator}\p{Emoji_Modifier}\p{Cf}\uFE0E\uFE0F\u20E3]/u.test(c)?'':'?';
+    })
+    .replace(/\s+/g,' ').trim();
+}
+
+function montarRelatorioMensal(jsPDF,mes,ano,lancamentos,locacao){
+  var doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
+  var margem=15, direita=doc.internal.pageSize.getWidth()-margem;
+  var fim=doc.internal.pageSize.getHeight()-19;
+  var pagamentoX=margem+3, vencimentoX=margem+28, descricaoX=margem+54;
+  var valorX=direita-29, statusX=direita-23;
+  var escuro=[19,36,61], texto=[42,54,71], suave=[86,100,118], ouro=[222,190,112];
+  var periodo=NM(mes,ano), agora=new Date(), y;
+  var linhas=[], itensPorFatura=new Map();
+
+  lancamentos.forEach(function(l){
+    if(l.tipo!=='cartao_item'){
+      linhas.push(l);
+      return;
+    }
+    if(!itensPorFatura.has(l.parent_id)) itensPorFatura.set(l.parent_id,[]);
+    itensPorFatura.get(l.parent_id).push(l);
+  });
+
+  var bruto=linhas.reduce(function(total,l){return total+Number(l.valor);},0);
+  var liquido=bruto-locacao;
+  var centavos=Math.round(liquido*100), maisa=Math.floor(centavos/2);
+  var temItens=linhas.some(function(l){return itensPorFatura.has(l.id);});
+
+  function fonte(tamanho,negrito,cor){
+    doc.setFont('helvetica',negrito?'bold':'normal');
+    doc.setFontSize(tamanho);
+    doc.setTextColor.apply(doc,cor||texto);
+  }
+  function dinheiro(valor){return textoDoRelatorio(BRL(valor));}
+  function cabecalho(){
+    doc.setFillColor.apply(doc,escuro);
+    doc.rect(0,0,doc.internal.pageSize.getWidth(),37,'F');
+    fonte(10,true,ouro);
+    doc.text('KAMAIS Clínica',margem,10);
+    fonte(19,true,[255,255,255]);
+    doc.text('Relatório financeiro mensal',margem,21);
+    fonte(10,false,[222,231,244]);
+    doc.text('Competência: '+periodo,margem,30);
+    var emissao=agora.toLocaleDateString('pt-BR')+' às '+agora.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+    doc.text('Emitido em '+textoDoRelatorio(emissao),direita,30,{align:'right'});
+  }
+  function resumo(){
+    doc.setFillColor(244,247,251);
+    doc.roundedRect(margem,45,direita-margem,53,2,2,'F');
+    fonte(11,true,escuro);
+    doc.text('Resumo do mês',margem+5,53);
+    [
+      ['Total bruto de despesas',bruto,62],
+      ['Receita de locação (dedução)',locacao,69],
+      ['Total líquido de despesas',liquido,77],
+      ['Parcela de Maisa (50%)',maisa/100,87],
+      ['Parcela de Kamylla (50%)',(centavos-maisa)/100,94]
+    ].forEach(function(par,i){
+      fonte(9.5,i===2);
+      doc.text(par[0],margem+5,par[2]);
+      fonte(9.5,true);
+      doc.text(dinheiro(par[1]),direita-5,par[2],{align:'right'});
+    });
+  }
+  function cabecalhoDaTabela(){
+    fonte(11,true,escuro);
+    doc.text('Lançamentos do mês',margem,y);
+    y+=4;
+    if(temItens){
+      fonte(8,false,suave);
+      doc.text('Os itens de cartão detalham as faturas e não são somados novamente.',margem,y+1);
+      y+=5;
+    }
+    doc.setFillColor(229,236,245);
+    doc.rect(margem,y,direita-margem,8,'F');
+    fonte(8.5,true,escuro);
+    doc.text('Pagamento',pagamentoX,y+5.2);
+    doc.text('Vencimento',vencimentoX,y+5.2);
+    doc.text('Descrição',descricaoX,y+5.2);
+    doc.text('Valor',valorX,y+5.2,{align:'right'});
+    doc.text('Status',statusX,y+5.2);
+    y+=8;
+  }
+  function novaPagina(){
+    doc.addPage();
+    cabecalho();
+    y=48;
+    cabecalhoDaTabela();
+  }
+  function linhaDaTabela(l,idx,item){
+    var desc=textoDoRelatorio(l.descricao)||'Sem descrição';
+    if(item) desc='Item do cartão: '+desc;
+    else if(l.tipo==='cartao_fatura') desc+=' (fatura de cartão)';
+    else if(l.tipo==='conta_fixa') desc+=' (conta recorrente)';
+
+    var x=descricaoX+(item?3:0), passo=4.2, espaco=3;
+    var cor=item?suave:texto;
+    fonte(8.5,false,cor);
+    var partes=doc.splitTextToSize(desc,valorX-31-x);
+    var capacidade=Math.floor((fim-y-espaco)/passo);
+    // Mantenha linhas comuns juntas. Descrições maiores que uma página continuam na próxima.
+    if(capacidade<Math.min(partes.length,3)) novaPagina();
+    var pos=0;
+    while(pos<partes.length){
+      var qtd=Math.min(partes.length-pos,Math.floor((fim-y-espaco)/passo));
+      var altura=qtd*passo+espaco;
+      var fundo=item?[238,243,249]:idx%2?[247,249,252]:[255,255,255];
+      doc.setFillColor.apply(doc,fundo);
+      doc.rect(margem,y,direita-margem,altura,'F');
+      fonte(8.5,false,cor);
+      for(var i=0;i<qtd;i++) doc.text(partes[pos+i],x,y+4.7+i*passo);
+      if(pos===0){
+        if(!item){
+          doc.text(l.data_pagamento?DT(l.data_pagamento):'-',pagamentoX,y+4.7);
+          doc.text(l.data_vencimento?DT(l.data_vencimento):'-',vencimentoX,y+4.7);
+        }
+        fonte(8.5,!item,cor);
+        doc.text(dinheiro(l.valor),valorX,y+4.7,{align:'right'});
+        if(!item){
+          var status=l.status==='pago'?'Pago':l.status==='a_pagar'?'A pagar':'-';
+          fonte(8.5,false,status==='Pago'?[17,109,76]:status==='A pagar'?[135,71,26]:suave);
+          doc.text(status,statusX,y+4.7);
+        }
+      }
+      y+=altura;
+      pos+=qtd;
+      if(pos<partes.length) novaPagina();
+    }
+  }
+
+  doc.setProperties({title:'KAMAIS Clínica - Relatório financeiro mensal - '+periodo});
+  cabecalho();
+  resumo();
+  y=110;
+  cabecalhoDaTabela();
+  if(!linhas.length){
+    fonte(9,false,suave);
+    doc.text('Nenhum lançamento registrado nesta competência.',margem+3,y+7);
+  }
+  linhas.forEach(function(l,idx){
+    linhaDaTabela(l,idx,false);
+    (itensPorFatura.get(l.id)||[]).forEach(function(it){linhaDaTabela(it,idx,true);});
+  });
+
+  var paginas=doc.getNumberOfPages();
+  var rodape=doc.internal.pageSize.getHeight()-10;
+  for(var pagina=1;pagina<=paginas;pagina++){
+    doc.setPage(pagina);
+    doc.setDrawColor(219,226,235);
+    doc.line(margem,rodape-5,direita,rodape-5);
+    fonte(8,false,suave);
+    doc.text('KAMAIS Clínica | '+periodo,margem,rodape);
+    doc.text('Página '+pagina+' de '+paginas,direita,rodape,{align:'right'});
+  }
+  return doc;
+}
+
 async function exportarPDF(){
+  var mes=FM, ano=FA;
   L(1);
   try{
-    // Busca dados do mês selecionado
-    var r=await SB.from('lancamentos').select('*').eq('user_id',CU.id).eq('mes',FM).eq('ano',FA)
-      .order('data_vencimento',{ascending:true,nullsFirst:false});
-    var lancamentos=r.data||[];
-    var locacao=await getLoc(FM,FA);
-
-    // Filtra itens de cartão (só descritivos, não entram no total)
-    var linhas=lancamentos.filter(function(l){return l.tipo!=='cartao_item';});
-
-    // Cálculo 50/50
-    var bruto=linhas.reduce(function(s,l){return s+Number(l.valor);},0);
-    var pago=linhas.filter(function(l){return l.status==='pago';}).reduce(function(s,l){return s+Number(l.valor);},0);
-    var apagar=linhas.filter(function(l){return l.status==='a_pagar';}).reduce(function(s,l){return s+Number(l.valor);},0);
-    var liq=bruto-locacao;
-    var liqC=Math.round(liq*100), maiC=Math.floor(liqC/2), kamC=liqC-maiC;
-
-    var {jsPDF}=window.jspdf;
-    var doc=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
-    var W=210, mg=15, y=mg, lh=7;
-
-    function linha(){ doc.setDrawColor(220,220,220); doc.line(mg,y,W-mg,y); y+=4; }
-    function titulo(txt,sz,bold){
-      doc.setFontSize(sz||11);
-      doc.setFont('helvetica', bold?'bold':'normal');
-      doc.text(txt, mg, y); y+=lh;
-    }
-    function par(lbl,val,cor){
-      doc.setFontSize(9); doc.setFont('helvetica','normal');
-      doc.setTextColor(80,80,80); doc.text(lbl, mg, y);
-      doc.setFont('helvetica','bold');
-      if(cor==='green') doc.setTextColor(22,163,74);
-      else if(cor==='red') doc.setTextColor(220,50,50);
-      else if(cor==='gold') doc.setTextColor(180,130,30);
-      else doc.setTextColor(30,30,30);
-      doc.text(val, W-mg, y, {align:'right'});
-      doc.setTextColor(30,30,30);
-      y+=lh;
-    }
-
-    // ── CABEÇALHO ──
-    doc.setFillColor(19,36,61);
-    doc.rect(0,0,W,28,'F');
-    doc.setTextColor(201,168,76);
-    doc.setFontSize(18); doc.setFont('helvetica','bold');
-    doc.text('KAMAIS Clínica', mg, 12);
-    doc.setFontSize(10); doc.setFont('helvetica','normal');
-    doc.setTextColor(180,190,210);
-    doc.text('Relatório Financeiro Mensal — '+NM(FM,FA), mg, 20);
-    doc.setTextColor(120,130,150);
-    doc.text('Gerado em '+new Date().toLocaleDateString('pt-BR')+' às '+new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}), W-mg, 20, {align:'right'});
-    doc.setTextColor(30,30,30);
-    y=36;
-
-    // ── RESUMO ──
-    doc.setFillColor(248,248,248);
-    doc.roundedRect(mg,y,W-2*mg,44,2,2,'F');
-    y+=6;
-    doc.setFontSize(10); doc.setFont('helvetica','bold'); doc.setTextColor(50,50,50);
-    doc.text('RESUMO DO MÊS', mg+4, y); y+=7;
-    doc.setFont('helvetica','normal');
-    par('  Total Bruto Despesas', BRL(bruto));
-    par('  (-) Receita de Locação', BRL(locacao), 'green');
-    doc.setFontSize(10); doc.setFont('helvetica','bold');
-    par('  Total Líquido Despesas', BRL(liq));
-    doc.setFont('helvetica','normal'); doc.setFontSize(9);
-    par('  🧑‍⚕️ Maisa (50%)', BRL(maiC/100), 'gold');
-    par('  🧑‍⚕️ Kamylla (50%)', BRL(kamC/100), 'gold');
-    y+=4;
-
-    // ── LANÇAMENTOS ──
-    doc.setFontSize(10); doc.setFont('helvetica','bold'); doc.setTextColor(50,50,50);
-    doc.text('LANÇAMENTOS', mg, y); y+=3; linha();
-
-    // Header tabela
-    doc.setFillColor(230,230,235);
-    doc.rect(mg,y,W-2*mg,6,'F');
-    doc.setFontSize(7.5); doc.setFont('helvetica','bold'); doc.setTextColor(80,80,80);
-    doc.text('DATA PGTO',   mg+1, y+4.5);
-    doc.text('DATA VENC',   mg+25, y+4.5);
-    doc.text('DESCRIÇÃO',   mg+50, y+4.5);
-    doc.text('VALOR',       mg+130, y+4.5);
-    doc.text('STATUS',      mg+155, y+4.5);
-    y+=7;
-
-    linhas.forEach(function(l,idx){
-      if(y>265){doc.addPage();y=15;}
-      var bg=idx%2===0?[255,255,255]:[248,249,252];
-      doc.setFillColor(bg[0],bg[1],bg[2]);
-      doc.rect(mg,y-1,W-2*mg,6.5,'F');
-      doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(50,50,50);
-      doc.text(l.data_pagamento?DT(l.data_pagamento):'—', mg+1, y+4);
-      doc.text(l.data_vencimento?DT(l.data_vencimento):'—', mg+25, y+4);
-      var desc=(l.descricao||'').substring(0,38)+(l.tipo==='cartao_fatura'?' [Cartão]':l.tipo==='conta_fixa'?' [Rec.]':'');
-      doc.text(desc, mg+50, y+4);
-      // Valor em dourado
-      doc.setTextColor(160,115,20); doc.setFont('helvetica','bold');
-      doc.text(BRL(l.valor), mg+130, y+4);
-      // Status colorido
-      if(l.status==='pago'){doc.setTextColor(22,163,74);}
-      else{doc.setTextColor(180,80,20);}
-      doc.setFont('helvetica','normal');
-      doc.text(l.status==='pago'?'Pago':'A pagar', mg+155, y+4);
-      doc.setTextColor(50,50,50);
-      // Items do cartão se houver
-      var fatItens=lancamentos.filter(function(it){return it.tipo==='cartao_item'&&it.parent_id===l.id;});
-      y+=6.5;
-      fatItens.forEach(function(it){
-        if(y>265){doc.addPage();y=15;}
-        doc.setFontSize(6.5); doc.setFont('helvetica','normal'); doc.setTextColor(120,120,130);
-        doc.text('  └ '+( it.descricao||'').substring(0,45), mg+50, y+3.5);
-        doc.text(BRL(it.valor), mg+130, y+3.5);
-        y+=5;
-      });
-    });
-
-    // ── RODAPÉ ──
-    if(y>260) doc.addPage();
-    y+=8;
-    doc.setDrawColor(200,200,200); doc.line(mg,y,W-mg,y); y+=5;
-    doc.setFontSize(8); doc.setFont('helvetica','normal'); doc.setTextColor(140,140,140);
-    doc.text('KAMAIS Clínica — Sistema de Gestão Financeira', mg, y);
-    doc.text('Pág. 1', W-mg, y, {align:'right'});
-
-    // Salva PDF
-    var nome='KAMAIS_'+NM(FM,FA).replace(' ','_')+'_Relatorio.pdf';
+    if(!window.jspdf) throw new Error('O gerador de PDF não carregou. Recarregue a página e tente novamente.');
+    var resultados=await Promise.all([
+      SB.from('lancamentos').select('*').eq('user_id',CU.id).eq('mes',mes).eq('ano',ano)
+        .order('data_vencimento',{ascending:true,nullsFirst:false}),
+      getLoc(mes,ano,true)
+    ]);
+    if(resultados[0].error) throw resultados[0].error;
+    var doc=montarRelatorioMensal(window.jspdf.jsPDF,mes,ano,resultados[0].data||[],resultados[1]);
+    var nome='KAMAIS_'+ano+'-'+String(mes).padStart(2,'0')+'_Relatorio_Financeiro.pdf';
     doc.save(nome);
-    T('PDF gerado: '+nome,'ok');
+    T('PDF de '+NM(mes,ano)+' baixado.','ok');
   }catch(e){T('Erro ao gerar PDF: '+e.message,'err');console.error(e);}
   finally{L(0);}
 }
